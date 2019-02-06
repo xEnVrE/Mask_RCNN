@@ -63,10 +63,13 @@ class TabletopConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 1
+    IMAGES_PER_GPU = 2
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 10  # Background + random YCB objects
+
+    # Specify the backbone network 
+    BACKBONE = "resnet50"
 
     # Number of training steps per epoch
     STEPS_PER_EPOCH = 100
@@ -237,11 +240,11 @@ def train(model):
     # Since we're using a very small dataset, and starting from
     # COCO trained weights, we don't need to train too long. Also,
     # no need to train all layers, just the heads should do it.
-    print("Training network heads")
+    print("Training network stages 4+")
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                layers='heads')
+                epochs=100,
+                layers='4+')
 
 
 def color_splash(image, mask):
