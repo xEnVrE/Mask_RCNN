@@ -33,8 +33,6 @@ import tabletop
 
 #   Declare directories for weights and logs
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
-MODEL_WEIGHTS_PATH = "./mask_rcnn_tabletop.h5"
-assert os.path.exists(MODEL_WEIGHTS_PATH)
 
 #   Import YARP bindings
 YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp/build"
@@ -76,6 +74,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._input_img_width = args.input_img_width
         self._input_img_height = args.input_img_height
 
+        self._model_weights_path = os.path.join(ROOT_DIR, args.model_weights_path)
+
         self.model = None
 
 
@@ -113,7 +113,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output buffer initialization
         self._output_buf_image = yarp.ImageRgb()
         self._output_buf_image.resize(self._input_img_width, self._input_img_height)
-        #self._output_buf_array = Image.new(mode='RGB', size=(self._input_img_width, self._input_img_height))
         self._output_buf_array = np.zeros((self._input_img_height, self._input_img_width, 1), dtype = np.float32)
         self._output_buf_image.setExternal(self._output_buf_array,
                                            self._output_buf_array.shape[1],
@@ -140,9 +139,16 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Load model weights
 
-        self._model.load_weights(MODEL_WEIGHTS_PATH, by_name=True)
+        try:
+            assert os.path.exists(self._model_weights_path)
+        except AssertionError as error:
+            print("Model weights path invalid: file does not exist")
+            print(error)
+            return false
 
-        print('Model weights loaded')
+        self._model.load_weights(self._model_weights_path, by_name=True)
+
+        print("Model weights loaded")
 
         #   Load class names
 
@@ -152,7 +158,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._class_names = self._dataset.class_names
 
         print("Class names: ", self._class_names)
-
 
         #   Visualization
         self._figure, self._ax = plt.subplots(1)
@@ -231,6 +236,8 @@ def parse_args():
                         default=640, type=int)
     parser.add_argument('--height', dest='input_img_height', help='Input image height',
                         default=480, type=int)
+    parser.add_argument(dest='model_weights_path', help='Model weights path relative to the root directory of the project',
+			type=str) 
 
     return parser.parse_args()
 
