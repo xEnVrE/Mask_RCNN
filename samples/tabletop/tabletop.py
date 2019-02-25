@@ -68,14 +68,20 @@ class TabletopConfig(Config):
     # Number of classes (including background)
     NUM_CLASSES = 1 + 10  # Background + random YCB objects
 
-    # Specify the backbone network 
+    # Specify the backbone network
     BACKBONE = "resnet50"
 
     # Number of training steps per epoch
     STEPS_PER_EPOCH = 100
 
+    # Number of epochs
+    EPOCHS = 150
+
     # Skip detections with < 90% confidence
-    DETECTION_MIN_CONFIDENCE = 0.9
+    DETECTION_MIN_CONFIDENCE = 0.8
+
+    # Define stages to be fine tuned
+    LAYERS_TUNE = '4+'
 
     # Add some env variables to fix GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -240,11 +246,11 @@ def train(model):
     # Since we're using a very small dataset, and starting from
     # COCO trained weights, we don't need to train too long. Also,
     # no need to train all layers, just the heads should do it.
-    print("Training network stages 4+")
+    print("Training network stages " + config.LAYERS_TUNE)
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=100,
-                layers='4+')
+                epochs=config.EPOCHS,
+                layers=config.LAYERS_TUNE)
 
 
 def color_splash(image, mask):
