@@ -63,7 +63,10 @@ class TabletopConfig(Config):
 
     # We use a GPU with 12GB memory, which can fit two images.
     # Adjust down if you use a smaller GPU.
-    IMAGES_PER_GPU = 2
+    IMAGES_PER_GPU = 3
+
+    # Define number of GPUs to use
+    GPU_COUNT = 3
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 10  # Background + random YCB objects
@@ -85,7 +88,7 @@ class TabletopConfig(Config):
 
     # Add some env variables to fix GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
 
 
 ############################################################
