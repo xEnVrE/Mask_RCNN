@@ -146,7 +146,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         except AssertionError as error:
             print("Model weights path invalid: file does not exist")
             print(error)
-            return false
+            return False
 
         self._model.load_weights(self._model_weights_path, by_name=True)
 
@@ -204,13 +204,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             tmp = np.ascontiguousarray(self._input_buf_array[:, :, :])
             self._output_buf_array = tmp.astype(np.float32)
 
-            print(self._output_buf_array)
             self._port_out.write(self._output_buf_image)
             # self._port_out.write(input_img)
 
             frame = self._input_buf_array
-
-            #print(frame.shape)
 
             #   run detection/segmentation on frame
             #   display/return results
