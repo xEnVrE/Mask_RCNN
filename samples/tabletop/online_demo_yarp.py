@@ -78,6 +78,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         self.model = None
 
+        self._class_colors = None
+
 
     def configure (self, rf):
         '''
@@ -144,7 +146,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         except AssertionError as error:
             print("Model weights path invalid: file does not exist")
             print(error)
-            return false
+            return False
 
         self._model.load_weights(self._model_weights_path, by_name=True)
 
@@ -160,6 +162,9 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print("Class names: ", self._class_names)
 
         #   Visualization
+        self._class_colors = {}
+        random_class_colors = visualize.random_colors(len(self._class_names))
+        self._class_colors = {class_id:color for (color, class_id) in zip(random_class_colors, self._class_names)}
         self._figure, self._ax = plt.subplots(1)
         plt.ion()
 
@@ -199,13 +204,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             tmp = np.ascontiguousarray(self._input_buf_array[:, :, :])
             self._output_buf_array = tmp.astype(np.float32)
 
-            print(self._output_buf_array)
             self._port_out.write(self._output_buf_image)
             # self._port_out.write(input_img)
 
             frame = self._input_buf_array
-
-            #print(frame.shape)
 
             #   run detection/segmentation on frame
             #   display/return results
@@ -215,8 +217,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             r = results[0]
 
             plt.cla()
+            instance_colors = []
+            instance_colors = [self._class_colors[self._class_names[class_id]] for class_id in r['class_ids']]
             visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
-                                       self._class_names, r['scores'], ax=self._ax)
+                                       self._class_names, r['scores'], ax=self._ax, colors=instance_colors)
 
             plt.pause(0.02)
 
