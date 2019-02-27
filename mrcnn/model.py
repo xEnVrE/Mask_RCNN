@@ -2170,9 +2170,17 @@ class MaskRCNN():
             layer = self.keras_model.get_layer(name)
             if layer.output in self.keras_model.losses:
                 continue
-            loss = (
-                tf.reduce_mean(layer.output, keepdims=True)
-                * self.config.LOSS_WEIGHTS.get(name, 1.))
+            # Warning: for tensorflow <= 1.4 keepdims must be keep_dims
+            # in order not to break compatibility
+            # TODO: keep only tf > 1.4 as dependency
+            if (int(tf.__version__[0])*100 + int(tf.__version__[2])*10 < 150):
+                loss = (
+                    tf.reduce_mean(layer.output, keep_dims=True)
+                    * self.config.LOSS_WEIGHTS.get(name, 1.))
+            else:
+                loss = (
+                    tf.reduce_mean(layer.output, keepdims=True)
+                    * self.config.LOSS_WEIGHTS.get(name, 1.))
             self.keras_model.add_loss(loss)
 
         # Add L2 Regularization
@@ -2194,9 +2202,17 @@ class MaskRCNN():
                 continue
             layer = self.keras_model.get_layer(name)
             self.keras_model.metrics_names.append(name)
-            loss = (
-                tf.reduce_mean(layer.output, keepdims=True)
-                * self.config.LOSS_WEIGHTS.get(name, 1.))
+            # Warning: for tensorflow <= 1.4 keepdims must be keep_dims
+            # in order not to break compatibility
+            # TODO: keep only tf > 1.4 as dependency
+            if (int(tf.__version__[0])*100 + int(tf.__version__[2])*10 < 150):
+                loss = (
+                    tf.reduce_mean(layer.output, keep_dims=True)
+                    * self.config.LOSS_WEIGHTS.get(name, 1.))
+            else:
+                loss = (
+                    tf.reduce_mean(layer.output, keepdims=True)
+                    * self.config.LOSS_WEIGHTS.get(name, 1.))
             self.keras_model.metrics_tensors.append(loss)
 
     def set_trainable(self, layer_regex, keras_model=None, indent=0, verbose=1):

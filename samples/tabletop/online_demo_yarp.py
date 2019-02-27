@@ -76,8 +76,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._input_img_width = args.input_img_width
         self._input_img_height = args.input_img_height
 
-        self.model = None
+        self._model_weights_path = os.path.join(ROOT_DIR, args.model_weights_path)
 
+        self._model = None
+
+        self._class_colors = None
 
     def configure (self, rf):
         '''
@@ -139,13 +142,18 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print('Inference model configured')
 
         #   Load model weights
+        try:
+            assert os.path.exists(self._model_weights_path)
+        except AssertionError as error:
+            print("Model weights path invalid: file does not exist")
+            print(error)
+            return False
 
-        self._model.load_weights(MODEL_WEIGHTS_PATH, by_name=True)
+        self._model.load_weights(self._model_weights_path, by_name=True)
 
-        print('Model weights loaded')
+        print("Model weights loaded")
 
         #   Load class names
-
         self._dataset = tabletop.TabletopDataset()
         self._dataset.load_tabletop(os.path.join(ROOT_DIR, "datasets", "tabletop"), 'train')
         self._dataset.prepare()
@@ -153,8 +161,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         print("Class names: ", self._class_names)
 
+        #   Visualization setup
+        self._class_colors = {}
+        random_class_colors = visualize.random_colors(len(self._class_names))
+        self._class_colors = {class_id:color for (color, class_id) in zip(random_class_colors, self._class_names)}
 
-        #   Visualization
         self._figure, self._ax = plt.subplots(1)
         plt.ion()
 
@@ -194,7 +205,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             tmp = np.ascontiguousarray(self._input_buf_array[:, :, :])
             self._output_buf_array = tmp.astype(np.float32)
 
-            print(self._output_buf_array)
             self._port_out.write(self._output_buf_image)
             # self._port_out.write(input_img)
 
@@ -208,10 +218,15 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             r = results[0]
 
             plt.cla()
+            
+            instance_colors = []
+            instance_colors = [self._class_colors[self._class_names[class_id]] for class_id in r['class_ids']]
+            visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
+                                       self._class_names, r['scores'], ax=self._ax, colors=instance_colors)
             visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
                                        self._class_names, r['scores'], ax=self._ax)
 
-            plt.pause(0.02)
+            plt.pause(0.01)
 
         return True
 
@@ -229,6 +244,9 @@ def parse_args():
                         default=640, type=int)
     parser.add_argument('--height', dest='input_img_height', help='Input image height',
                         default=480, type=int)
+
+    parser.add_argument(dest='model_weights_path', help='Model weights path relative to the root directory of the project',
+			type=str)
 
     return parser.parse_args()
 
@@ -252,3 +270,4 @@ if __name__ == '__main__':
 
     plt.ioff()
     plt.show()
+
