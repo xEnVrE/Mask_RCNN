@@ -56,18 +56,18 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
 
 class TabletopConfig(Config):
-    """Configuration for training on the toy  dataset.
+    """Configuration for training on the synthetic tabletop dataset.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "tabletop"
+    NAME = "mask_rcnn_synth_tabletop"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
     IMAGES_PER_GPU = 3
 
     # Define number of GPUs to use
-    GPU_COUNT = 3
+    GPU_COUNT = 4
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 10  # Background + random YCB objects
@@ -446,8 +446,6 @@ def train(model):
                 learning_rate=config.LEARNING_RATE,
                 epochs=config.EPOCHS,
                 layers=config.LAYERS_TUNE)
-
-
 
 def color_splash(image, mask):
     """Apply color splash effect.
