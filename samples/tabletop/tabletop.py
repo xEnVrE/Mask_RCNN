@@ -116,10 +116,10 @@ class YCBVideoConfigTraining(Config):
     STEPS_PER_EPOCH = 100
 
     # Number of epochs
-    EPOCHS = 150
+    EPOCHS = 100
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.8
+    DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
@@ -426,16 +426,23 @@ class TabletopDataset(utils.Dataset):
 def train(model):
     """Train the model."""
 
-    # Training dataset
-    dataset_train = TabletopDataset()
-    dataset_train.load_tabletop(args.dataset, "train")
+    # # Training dataset
+    # dataset_train = TabletopDataset()
+    # dataset_train.load_tabletop(args.dataset, "train")
+    # dataset_train.prepare()
+    #
+    # # Validation dataset
+    # dataset_val = TabletopDataset()
+    # dataset_val.load_tabletop(args.dataset, "val")
+    # dataset_val.prepare()
+
+    dataset_train = YCBVideoDataset()
+    dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
 
-    # Validation dataset
-    dataset_val = TabletopDataset()
-    dataset_val.load_tabletop(args.dataset, "val")
+    dataset_val = YCBVideoDataset()
+    dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
-
 
     # *** This training schedule is an example. Update to your needs ***
     # Since we're using a very small dataset, and starting from
@@ -563,7 +570,8 @@ if __name__ == '__main__':
 
     # Configurations
     if args.command == "train":
-        config = TabletopConfig()
+        # config = TabletopConfig()
+        config = YCBVideoConfigTraining()
     else:
         class InferenceConfig(TabletopConfig):
             # Set batch size to 1 since we'll be running inference on
