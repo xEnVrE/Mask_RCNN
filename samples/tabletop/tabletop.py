@@ -61,8 +61,8 @@ class TabletopConfig(Config):
     # Give the configuration a recognizable name
     NAME = "tabletop"
 
-    # We use a GPU with 12GB memory, which can fit two images.
-    # Adjust down if you use a smaller GPU.
+    # P100s can hold up to 4 images using ResNet50.
+    # During inference, make sure to set this to 1.
     IMAGES_PER_GPU = 3
 
     # Define number of GPUs to use
@@ -80,13 +80,14 @@ class TabletopConfig(Config):
     # Number of epochs
     EPOCHS = 150
 
-    # Skip detections with < 90% confidence
+    # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.8
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
 
     # Add some env variables to fix GPU usage
+    # Change these during inference
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
 
@@ -254,6 +255,7 @@ def train(model):
                 learning_rate=config.LEARNING_RATE,
                 epochs=config.EPOCHS,
                 layers=config.LAYERS_TUNE)
+
 
 
 def color_splash(image, mask):

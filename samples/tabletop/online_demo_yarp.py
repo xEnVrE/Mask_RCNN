@@ -33,6 +33,8 @@ import tabletop
 
 #   Declare directories for weights and logs
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+MODEL_WEIGHTS_PATH = "./mask_rcnn_tabletop.h5"
+assert os.path.exists(MODEL_WEIGHTS_PATH)
 
 #   Import YARP bindings
 YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp/build"
@@ -76,10 +78,9 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         self._model_weights_path = os.path.join(ROOT_DIR, args.model_weights_path)
 
-        self.model = None
+        self._model = None
 
         self._class_colors = None
-
 
     def configure (self, rf):
         '''
@@ -115,6 +116,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output buffer initialization
         self._output_buf_image = yarp.ImageRgb()
         self._output_buf_image.resize(self._input_img_width, self._input_img_height)
+        #self._output_buf_array = Image.new(mode='RGB', size=(self._input_img_width, self._input_img_height))
         self._output_buf_array = np.zeros((self._input_img_height, self._input_img_width, 1), dtype = np.float32)
         self._output_buf_image.setExternal(self._output_buf_array,
                                            self._output_buf_array.shape[1],
@@ -140,7 +142,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print('Inference model configured')
 
         #   Load model weights
-
         try:
             assert os.path.exists(self._model_weights_path)
         except AssertionError as error:
@@ -153,7 +154,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print("Model weights loaded")
 
         #   Load class names
-
         self._dataset = tabletop.TabletopDataset()
         self._dataset.load_tabletop(os.path.join(ROOT_DIR, "datasets", "tabletop"), 'train')
         self._dataset.prepare()
@@ -161,10 +161,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         print("Class names: ", self._class_names)
 
-        #   Visualization
+        #   Visualization setup
         self._class_colors = {}
         random_class_colors = visualize.random_colors(len(self._class_names))
         self._class_colors = {class_id:color for (color, class_id) in zip(random_class_colors, self._class_names)}
+
         self._figure, self._ax = plt.subplots(1)
         plt.ion()
 
@@ -217,12 +218,15 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             r = results[0]
 
             plt.cla()
+            
             instance_colors = []
             instance_colors = [self._class_colors[self._class_names[class_id]] for class_id in r['class_ids']]
             visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
                                        self._class_names, r['scores'], ax=self._ax, colors=instance_colors)
+            visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
+                                       self._class_names, r['scores'], ax=self._ax)
 
-            plt.pause(0.02)
+            plt.pause(0.01)
 
         return True
 
@@ -240,8 +244,9 @@ def parse_args():
                         default=640, type=int)
     parser.add_argument('--height', dest='input_img_height', help='Input image height',
                         default=480, type=int)
+
     parser.add_argument(dest='model_weights_path', help='Model weights path relative to the root directory of the project',
-			type=str) 
+			type=str)
 
     return parser.parse_args()
 
@@ -265,3 +270,4 @@ if __name__ == '__main__':
 
     plt.ioff()
     plt.show()
+
