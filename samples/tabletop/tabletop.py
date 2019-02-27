@@ -226,7 +226,7 @@ class YCBVideoDataset(utils.Dataset):
                     mask_ids = instance_ids
                 )
 
-        print("Dataset loaded: %d images found", len(self.image_info))
+        print("Dataset loaded: ", len(self.image_info), "images found.")
 
     def load_mask(self, image_id):
         """Generate instance mask array for an image id
