@@ -33,6 +33,7 @@ import json
 import datetime
 import numpy as np
 import skimage.draw
+import scipy.io
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -91,10 +92,200 @@ class TabletopConfig(Config):
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
 
+class YCBVideoConfigTraining(Config):
+    """Configuration for training on the YCB_Video dataset for segmentation.
+    Derives from the base Config class and overrides some values.
+    """
+    # Give the configuration a recognizable name
+    NAME = "ycb_video_training"
+
+    # P100s can hold up to 4 images using ResNet50.
+    # During inference, make sure to set this to 1.
+    IMAGES_PER_GPU = 4
+
+    # Define number of GPUs to use
+    GPU_COUNT = 3
+
+    # Number of classes (including background)
+    NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
+
+    # Specify the backbone network
+    BACKBONE = "resnet50"
+
+    # Number of training steps per epoch
+    STEPS_PER_EPOCH = 100
+
+    # Number of epochs
+    EPOCHS = 150
+
+    # Skip detections with < some confidence level
+    DETECTION_MIN_CONFIDENCE = 0.8
+
+    # Define stages to be fine tuned
+    LAYERS_TUNE = '4+'
+
+    # Add some env variables to fix GPU usage
+    # Change these during inference
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
+
+class YCBVideoConfigInference(Config):
+    """Configuration for performing inference with the YCB_Video dataset for segmentation.
+    Derives from the base Config class and overrides some values.
+    """
+    # Give the configuration a recognizable name
+    NAME = "ycb_video_inference"
+
+    # P100s can hold up to 4 images using ResNet50.
+    # During inference, make sure to set this to 1.
+    IMAGES_PER_GPU = 1
+
+    # Define number of GPUs to use
+    GPU_COUNT = 1
+
+    # Number of classes (including background)
+    NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
+
+    # Specify the backbone network
+    BACKBONE = "resnet50"
+
+    # Skip detections with < some confidence level
+    DETECTION_MIN_CONFIDENCE = 0.7
+
+    # Add some env variables to fix GPU usage
+    # Change these during inference
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+
 
 ############################################################
 #  Dataset
 ############################################################
+class YCBVideoDataset(utils.Dataset):
+
+    def parse_class_list(self, dataset_root):
+        """
+        Parses the class list from the classes.txt file of the dataset.
+        Does not include background as a class
+        :param dataset_root (string): root directory of the dataset.
+        :return: class_list (list): ordered list of classes
+        """
+        # Classes file is dataset_root/image_sets/classes.txt
+        classes_filename = os.path.join(dataset_root, "image_sets", "classes.txt")
+        with open(classes_filename) as handle:
+            classes_list_raw = handle.readlines()
+        classes_list = [cl.strip() for cl in classes_list_raw]
+
+        return classes_list
+
+    def load_dataset(self, dataset_root, subset):
+        """
+        Loads the YCB_Video dataset paths (without opening image files).
+        :param dataset_root (string): Root directory of the dataset.
+        :param subset (string): Train or validation dataset.
+        """
+
+        # Training or validation dataset
+        assert subset in ["train", "val"]
+
+        # Add the classes (order is vital for mask id consistency)
+        class_list = self.parse_class_list(dataset_root)
+
+        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
+        for class_id, class_name in  enumerate(class_list):
+            self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
+
+        # Discriminate between train and validation set
+        subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
+
+        # Iterate over every data element to add images and masks
+        with open(subset_file, 'r') as handle:
+            frame_file_list_raw = handle.readlines()
+        frame_file_list = [fr.strip() for fr in frame_file_list_raw]
+
+        data_dir = os.path.join(dataset_root, 'data/')
+
+        for frame in frame_file_list:
+            rgb_image_path = data_dir + frame + '-color.png'
+            mask_path = data_dir + frame + '-label.png'
+            metadata_path = data_dir + frame + '-meta.mat'
+
+            # Load the metadata file for each sample to get the instance IDs for the masks
+            metadata = scipy.io.loadmat(metadata_path)
+            instance_ids =  metadata['cls_indexes']
+            instance_ids = instance_ids.reshape(instance_ids.size)
+
+            # Add an image to the dataset
+            if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
+                self.add_image(
+                    "ycb_video",
+                    image_id = frame,
+                    path = rgb_image_path,
+                    width = 640, height = 480,
+                    mask_path = mask_path,
+                    mask_ids = instance_ids
+                )
+
+        print("Dataset loaded: %d images found", len(self.image_info))
+
+    def load_mask(self, image_id):
+        """Generate instance mask array for an image id
+        :param
+            image_id (string): id of the image, according to self.image_info list
+        :return:
+            masks (ndarray): A bool array of shape [height, width, instance count] with
+                    one mask per instance.
+            class_ids (ndarray): A 1D array of class IDs of the instance masks.
+        """
+
+        # If not a YCB_Video dataset image, delegate to parent class.
+        image_info = self.image_info[image_id]
+        if image_info["source"] != "ycb_video":
+            return super(self.__class__, self).load_mask(image_id)
+
+        # Instance ids have already been loaded
+        # This dataset is easier because there can only be one instance of each object.
+        # Therefore, grayscale mask ids are directly related to the class
+        class_ids = image_info['mask_ids']
+
+        # Load image mask
+        mask_image = skimage.io.imread(image_info["mask_path"])
+
+        # Create empty tensor
+        no_of_masks = class_ids.size
+        assert no_of_masks > 0
+
+        masks = np.zeros( (image_info["height"], image_info["width"], no_of_masks),
+                            dtype=np.bool)
+
+        # create boolean masks for each instance, respecting instance id order
+        for idx in range(no_of_masks):
+            masks[:, :, idx] = mask_image == class_ids[idx]
+
+        return masks, class_ids
+
+    def get_class_id(self, image_text_label):
+        """Return class id according to the image textual label
+        Returns:
+            class_id: int of the class id according to self.class_info. -1
+                if class not found
+        """
+        for this_class in self.class_info:
+            if this_class["name"] != image_text_label:
+                continue
+            else:
+                return this_class["id"]
+
+        return -1
+
+    def image_reference(self, image_id):
+        """Return the path of the image."""
+        info = self.image_info[image_id]
+        if info["source"] == "ycb_video":
+            return info["path"]
+        else:
+            super(self.__class__, self).image_reference(image_id)
+
 class TabletopDataset(utils.Dataset):
 
     def load_tabletop(self, dataset_root, subset):
