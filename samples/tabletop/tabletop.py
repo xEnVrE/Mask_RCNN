@@ -63,7 +63,7 @@ class TabletopConfig(Config):
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 3
+    IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
     GPU_COUNT = 3
@@ -78,13 +78,13 @@ class TabletopConfig(Config):
     STEPS_PER_EPOCH = 100
 
     # Number of epochs
-    EPOCHS = 150
+    EPOCHS = 100
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.8
 
     # Define stages to be fine tuned
-    LAYERS_TUNE = '4+'
+    LAYERS_TUNE = '3+'
 
     # Add some env variables to fix GPU usage
     # Change these during inference
