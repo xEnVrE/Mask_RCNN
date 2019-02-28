@@ -34,6 +34,7 @@ import datetime
 import numpy as np
 import skimage.draw
 import scipy.io
+from keras.utils.generic_utils import Progbar
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -175,22 +176,6 @@ class YCBVideoConfigInference(Config):
 ############################################################
 class YCBVideoDataset(utils.Dataset):
 
-    def progress(count, total, status=''):
-        """
-        Quick and easy progress bar to show dataset loading process
-        :param count (int): current progress
-        :param total (int): total progress
-        :param status (string): string to display
-        """
-        bar_len = 60
-        filled_len = int(round(bar_len * count / float(total)))
-
-        percents = round(100.0 * count / float(total), 1)
-        bar = '=' * filled_len + '-' * (bar_len - filled_len)
-
-        sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percents, '%', status))
-        sys.stdout.flush()
-
     def parse_class_list(self, dataset_root):
         """
         Parses the class list from the classes.txt file of the dataset.
@@ -233,7 +218,9 @@ class YCBVideoDataset(utils.Dataset):
 
         data_dir = os.path.join(dataset_root, 'data/')
 
-        progress_step = round(len(frame_file_list)/1000)
+        progress_step = max(round(len(frame_file_list)/1000), 1)
+        progbar = Progbar(target = len(frame_file_list))
+        print("Loading ", subset, "dataset...")
 
         for progress_idx, frame in enumerate(frame_file_list):
             rgb_image_path = data_dir + frame + '-color.png'
@@ -258,10 +245,9 @@ class YCBVideoDataset(utils.Dataset):
            
             # Keep track of progress
             if progress_idx%progress_step == 0:
-                print(progress_idx, progress_step)
-                self.progress(int(progress_idx), len(frame_file_list))
+                progbar.update(progress_idx)
 
-        print("Dataset loaded: ", len(self.image_info), "images found.")
+        print("\nDataset loaded: ", len(self.image_info), "images found.")
 
     def load_mask(self, image_id):
         """Generate instance mask array for an image id
@@ -507,7 +493,6 @@ def color_splash(image, mask):
     else:
         splash = gray.astype(np.uint8)
     return splash
-
 
 def detect_and_color_splash(model, image_path=None, video_path=None):
     assert image_path or video_path
