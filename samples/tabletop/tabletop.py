@@ -55,19 +55,20 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 ############################################################
 
 
-class TabletopConfig(Config):
+class TabletopConfigTraining(Config):
     """Configuration for training on the synthetic tabletop dataset.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "mask_rcnn_synth_tabletop"
+    NAME = "mask_rcnn_synth_tabletop_training"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
     IMAGES_PER_GPU = 3
 
     # Define number of GPUs to use
-    GPU_COUNT = 4
+    GPU_COUNT = 3
+    GPU_ID = "0,1,2"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 10  # Background + random YCB objects
@@ -87,10 +88,29 @@ class TabletopConfig(Config):
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
 
-    # Add some env variables to fix GPU usage
-    # Change these during inference
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
+class TabletopConfigInference(Config):
+    """Configuration for training on the synthetic tabletop dataset.
+    Derives from the base Config class and overrides some values.
+    """
+    # Give the configuration a recognizable name
+    NAME = "mask_rcnn_synth_tabletop_inference"
+
+    # P100s can hold up to 4 images using ResNet50.
+    # During inference, make sure to set this to 1.
+    IMAGES_PER_GPU = 1
+
+    # Define number of GPUs to use
+    GPU_COUNT = 1
+    GPU_ID = "0"
+
+    # Number of classes (including background)
+    NUM_CLASSES = 1 + 10  # Background + random YCB objects
+
+    # Specify the backbone network
+    BACKBONE = "resnet50"
+
+    # Skip detections with < some confidence level
+    DETECTION_MIN_CONFIDENCE = 0.7
 
 class YCBVideoConfigTraining(Config):
     """Configuration for training on the YCB_Video dataset for segmentation.
@@ -105,6 +125,7 @@ class YCBVideoConfigTraining(Config):
 
     # Define number of GPUs to use
     GPU_COUNT = 3
+    GPU_ID = "0,1,2"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
@@ -124,11 +145,6 @@ class YCBVideoConfigTraining(Config):
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
 
-    # Add some env variables to fix GPU usage
-    # Change these during inference
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2'
-
 class YCBVideoConfigInference(Config):
     """Configuration for performing inference with the YCB_Video dataset for segmentation.
     Derives from the base Config class and overrides some values.
@@ -142,6 +158,7 @@ class YCBVideoConfigInference(Config):
 
     # Define number of GPUs to use
     GPU_COUNT = 1
+    GPU_ID = "0"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
@@ -570,15 +587,15 @@ if __name__ == '__main__':
 
     # Configurations
     if args.command == "train":
-        # config = TabletopConfig()
+        # config = TabletopConfigTraining()
         config = YCBVideoConfigTraining()
     else:
-        class InferenceConfig(TabletopConfig):
-            # Set batch size to 1 since we'll be running inference on
-            # one image at a time. Batch size = GPU_COUNT * IMAGES_PER_GPU
-            GPU_COUNT = 1
-            IMAGES_PER_GPU = 1
-        config = InferenceConfig()
+        #config = TabletopConfigInference()
+        config = YCBVideoConfigInference()
+    
+    # Add some env variables to set GPU usage
+    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
+    os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
     config.display()
 
     # Create model
