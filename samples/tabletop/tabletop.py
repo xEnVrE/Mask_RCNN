@@ -169,16 +169,27 @@ class YCBVideoConfigInference(Config):
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.7
 
-    # Add some env variables to fix GPU usage
-    # Change these during inference
-    os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
-
 
 ############################################################
 #  Dataset
 ############################################################
 class YCBVideoDataset(utils.Dataset):
+
+    def progress(count, total, status=''):
+        """
+        Quick and easy progress bar to show dataset loading process
+        :param count (int): current progress
+        :param total (int): total progress
+        :param status (string): string to display
+        """
+        bar_len = 60
+        filled_len = int(round(bar_len * count / float(total)))
+
+        percents = round(100.0 * count / float(total), 1)
+        bar = '=' * filled_len + '-' * (bar_len - filled_len)
+
+        sys.stdout.write('[%s] %s%s ...%s\r' % (bar, percents, '%', status))
+        sys.stdout.flush()
 
     def parse_class_list(self, dataset_root):
         """
@@ -222,7 +233,9 @@ class YCBVideoDataset(utils.Dataset):
 
         data_dir = os.path.join(dataset_root, 'data/')
 
-        for frame in frame_file_list:
+        progress_step = round(len(frame_file_list)/1000)
+
+        for progress_idx, frame in enumerate(frame_file_list):
             rgb_image_path = data_dir + frame + '-color.png'
             mask_path = data_dir + frame + '-label.png'
             metadata_path = data_dir + frame + '-meta.mat'
@@ -242,6 +255,11 @@ class YCBVideoDataset(utils.Dataset):
                     mask_path = mask_path,
                     mask_ids = instance_ids
                 )
+           
+            # Keep track of progress
+            if progress_idx%progress_step == 0:
+                print(progress_idx, progress_step)
+                self.progress(int(progress_idx), len(frame_file_list))
 
         print("Dataset loaded: ", len(self.image_info), "images found.")
 
