@@ -124,13 +124,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Inference model setup
         #   Configure some parameters for inference
-
-        class InferenceConfig(tabletop.TabletopConfig):
-            #   Batch size is going to be 1 since we are processing 1 frame at a time
-            GPU_COUNT = 1
-            IMAGES_PER_GPU = 1
-
-        config = InferenceConfig()
+        config = tabletop.YCBVideoConfigInference()
         config.display()
 
         self._model = modellib.MaskRCNN(mode='inference',
@@ -138,6 +132,17 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                                   config=config)
 
         print('Inference model configured')
+
+        #   Load class names
+        self._dataset = tabletop.YCBVideoDataset()
+        #self._dataset.load_dataset(os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset"), 'train')
+        #self._dataset.prepare()
+        #self._class_names = self._dataset.class_names
+
+		# Add the classes (order is vital for mask id consistency)		
+        self._class_names = ['__background__'] + self._dataset.parse_class_list(os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset"))
+
+        print("Class names: ", self._class_names)
 
         #   Load model weights
         try:
@@ -150,14 +155,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._model.load_weights(self._model_weights_path, by_name=True)
 
         print("Model weights loaded")
-
-        #   Load class names
-        self._dataset = tabletop.TabletopDataset()
-        self._dataset.load_tabletop(os.path.join(ROOT_DIR, "datasets", "tabletop"), 'train')
-        self._dataset.prepare()
-        self._class_names = self._dataset.class_names
-
-        print("Class names: ", self._class_names)
 
         #   Visualization setup
         self._class_colors = {}
@@ -218,11 +215,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             plt.cla()
             
             instance_colors = []
+            print('Instances detected: ', r['class_ids'])
             instance_colors = [self._class_colors[self._class_names[class_id]] for class_id in r['class_ids']]
             visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
                                        self._class_names, r['scores'], ax=self._ax, colors=instance_colors)
-            visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
-                                       self._class_names, r['scores'], ax=self._ax)
 
             plt.pause(0.01)
 
