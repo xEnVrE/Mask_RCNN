@@ -33,8 +33,6 @@ import tabletop
 
 #   Declare directories for weights and logs
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
-MODEL_WEIGHTS_PATH = "./mask_rcnn_tabletop.h5"
-assert os.path.exists(MODEL_WEIGHTS_PATH)
 
 #   Import YARP bindings
 YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp/build"
@@ -76,7 +74,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._input_img_width = args.input_img_width
         self._input_img_height = args.input_img_height
 
-        self._model_weights_path = os.path.join(ROOT_DIR, args.model_weights_path)
+        self._model_weights_path = os.path.join(MODEL_DIR, args.model_weights_path)
 
         self._model = None
 
@@ -245,7 +243,7 @@ def parse_args():
     parser.add_argument('--height', dest='input_img_height', help='Input image height',
                         default=480, type=int)
 
-    parser.add_argument(dest='model_weights_path', help='Model weights path relative to the root directory of the project',
+    parser.add_argument(dest='model_weights_path', help='Model weights path relative to the directory PROJECT_ROOT/logs',
 			type=str)
 
     return parser.parse_args()
