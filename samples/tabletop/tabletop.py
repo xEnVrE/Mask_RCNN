@@ -65,14 +65,14 @@ class TabletopConfigTraining(Config):
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 3
+    IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
     GPU_COUNT = 3
     GPU_ID = "0,1,2"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 10  # Background + random YCB objects
+    NUM_CLASSES = 1 + 21  # Background + random YCB objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
@@ -81,7 +81,7 @@ class TabletopConfigTraining(Config):
     STEPS_PER_EPOCH = 100
 
     # Number of epochs
-    EPOCHS = 150
+    EPOCHS = 100
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.8
@@ -105,7 +105,7 @@ class TabletopConfigInference(Config):
     GPU_ID = "0"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 10  # Background + random YCB objects
+    NUM_CLASSES = 1 + 21 # Background + random YCB objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
@@ -485,20 +485,20 @@ def train(model):
     """Train the model."""
 
     # # Training dataset
-    # dataset_train = TabletopDataset()
-    # dataset_train.load_tabletop(args.dataset, "train")
+    dataset_train = TabletopDataset()
+    # dataset_train.load_dataset(args.dataset, "train")
     # dataset_train.prepare()
     #
     # # Validation dataset
-    # dataset_val = TabletopDataset()
-    # dataset_val.load_tabletop(args.dataset, "val")
+    dataset_val = TabletopDataset()
+    # dataset_val.load_dataset(args.dataset, "val")
     # dataset_val.prepare()
 
-    dataset_train = YCBVideoDataset()
+    # dataset_train = YCBVideoDataset()
     dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
 
-    dataset_val = YCBVideoDataset()
+    # dataset_val = YCBVideoDataset()
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
 
@@ -626,12 +626,13 @@ if __name__ == '__main__':
     print("Logs: ", args.logs)
 
     # Configurations
+    # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        # config = TabletopConfigTraining()
-        config = YCBVideoConfigTraining()
+        config = TabletopConfigTraining()
+        # config = YCBVideoConfigTraining()
     else:
-        #config = TabletopConfigInference()
-        config = YCBVideoConfigInference()
+        config = TabletopConfigInference()
+        # config = YCBVideoConfigInference()
     
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
