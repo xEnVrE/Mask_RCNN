@@ -191,6 +191,17 @@ class YCBVideoDataset(utils.Dataset):
 
         return classes_list
 
+    def load_class_names(self, class_list):
+        """
+        Loads the class list into the Dataset class, without opening any metadata file
+        :param class_list (list): list of class names (order defines the id)
+        """
+
+        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
+        # Background has id 0, but it is not included in the class list
+        for class_id, class_name in  enumerate(class_list):
+            self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
+
     def load_dataset(self, dataset_root, subset):
         """
         Loads the YCB_Video dataset paths (without opening image files).
@@ -203,10 +214,7 @@ class YCBVideoDataset(utils.Dataset):
 
         # Add the classes (order is vital for mask id consistency)
         class_list = self.parse_class_list(dataset_root)
-
-        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
-        for class_id, class_name in  enumerate(class_list):
-            self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
+        self.load_class_names(class_list)
 
         # Discriminate between train and validation set
         subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
@@ -309,9 +317,52 @@ class YCBVideoDataset(utils.Dataset):
 
 class TabletopDataset(utils.Dataset):
 
-    def load_tabletop(self, dataset_root, subset):
+    def parse_class_list(self, dataset_root):
         """
-        Load the tabletop dataset. Randomly assignes images to train and validation subsets.
+        Parses the class list from the meta file of the dataset.
+        Does not include background as a class
+        :param dataset_root (string): root directory of the dataset
+        :param subset (string): train or val
+        :return: class_list (list): ordered list of classes
+        """
+        # Very inefficient, needs to open the whole json file!
+        # Load classes from the json file
+        for subset in ['test', 'val', 'train']:
+            DATASET_JSON_FILENAME = os.path.join(dataset_root, subset, 'dataset.json')
+            if os.path.isfile(DATASET_JSON_FILENAME):
+                break
+        # Assertion error if there is no json file for the dataset
+        assert os.path.isfile(DATASET_JSON_FILENAME)
+
+        # Open the metadata file
+        with (open(DATASET_JSON_FILENAME, 'r')) as handle:
+            dataset_dict = json.loads(json.load(handle))
+
+        # Add classes (except __background__, that is added by default)
+        # We need to make sure that the classes are added according to the order of their IDs in the dataset
+        # Or the names will be screwed up
+        class_entries_sorted_by_id = sorted(dataset_dict['Classes'].items(), key=lambda kv: kv[1])
+
+        class_list = [cls[0] for cls in class_entries_sorted_by_id]
+
+        return class_list
+
+    def load_class_names(self, class_list):
+        """
+        Loads the class list into the Dataset class, without opening any metadata file
+        :param class_list (list): list of class names (order defines the id)
+        """
+
+        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
+        # Background has id 0, but it is not included in the class list
+        for class_id, class_name in enumerate(class_list):
+            if class_name == '__background__':
+                continue
+            self.add_class('tabletop', class_id = class_id, class_name = class_name)
+
+    def load_dataset(self, dataset_root, subset):
+        """
+        Load the tabletop dataset.
         :param dataset_root (string): Root directory of the dataset.
         :param subset (string): Train or validation dataset
         """
@@ -320,12 +371,15 @@ class TabletopDataset(utils.Dataset):
         assert subset in ["train", "val"]
         subset_dir = os.path.join(dataset_root, subset)
 
-        # Load classes from the json file
+        # Load dataset metadata
         DATASET_JSON_FILENAME = os.path.join(subset_dir, "dataset.json")
         assert os.path.isfile(DATASET_JSON_FILENAME)
 
         with (open(DATASET_JSON_FILENAME, 'r')) as handle:
             dataset_dict = json.loads(json.load(handle))
+
+        class_list = self.parse_class_list(dataset_root)
+        self.load_class_names(class_list)
 
         # fix the maskID field
         for path, info in dataset_dict['Images'].items():
@@ -355,26 +409,9 @@ class TabletopDataset(utils.Dataset):
         # Annotations = bounding boxes of object instances in the image
         # MaskID = correspondences between mask colors and class label
 
-        # Add classes (except __background__, that is added by default)
-        # We need to make sure that the classes are added according to the order of their IDs in the dataset
-        # Or the names will be screwed up
-        class_entries_sorted_by_id = sorted(dataset_dict['Classes'].items(), key=lambda kv: kv[1])
-
-        # for class_name, id in dataset_dict['Classes'].items():
-        #     if class_name=='__background__':
-        #         continue
-        #     self.add_class("tabletop", id, class_name)
-
-        for label, id in class_entries_sorted_by_id:
-            if label == '__background__':
-                continue
-            self.add_class('tabletop', id, label)
-
         # Iterate over images in the dataset to add them
         for path, info in dataset_dict['Images'].items():
             image_path = os.path.join(subset_dir, path)
-
-            #TODO: verify if actually image size is useful when loading the masks
             image = skimage.io.imread(image_path)
             height, width = image.shape[:2]
 
