@@ -84,7 +84,7 @@ class TabletopConfigTraining(Config):
     EPOCHS = 100
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.8
+    DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
@@ -484,21 +484,14 @@ class TabletopDataset(utils.Dataset):
 def train(model):
     """Train the model."""
 
-    # # Training dataset
+    #dataset_train = YCBVideoDataset()
     dataset_train = TabletopDataset()
-    # dataset_train.load_dataset(args.dataset, "train")
-    # dataset_train.prepare()
-    #
-    # # Validation dataset
-    dataset_val = TabletopDataset()
-    # dataset_val.load_dataset(args.dataset, "val")
-    # dataset_val.prepare()
-
-    # dataset_train = YCBVideoDataset()
     dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
 
-    # dataset_val = YCBVideoDataset()
+    #dataset_val = YCBVideoDataset()
+    dataset_val = TabletopDataset()
+
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
 
@@ -633,7 +626,7 @@ if __name__ == '__main__':
     else:
         config = TabletopConfigInference()
         # config = YCBVideoConfigInference()
-    
+
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
