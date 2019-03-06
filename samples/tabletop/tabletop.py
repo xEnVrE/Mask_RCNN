@@ -481,16 +481,26 @@ class TabletopDataset(utils.Dataset):
         else:
             super(self.__class__, self).image_reference(image_id)
 
-def train(model):
+def train(model, config):
     """Train the model."""
 
+    # Automatically discriminate the dataset according to the config file
+    if isinstance(config, TabletopConfigTraining):
+        # Load the training dataset
+        dataset_train = TabletopDataset()
+        # Load the validation dataset
+        dataset_val = TabletopDataset()
+    elif isinstance(config, YCBVideoConfigTraining):
+        dataset_train = YCBVideoDataset()
+        dataset_val = YCBVideoDataset()
+
     # # Training dataset
-    dataset_train = TabletopDataset()
+    # dataset_train = TabletopDataset()
     # dataset_train.load_dataset(args.dataset, "train")
     # dataset_train.prepare()
     #
     # # Validation dataset
-    dataset_val = TabletopDataset()
+    # dataset_val = TabletopDataset()
     # dataset_val.load_dataset(args.dataset, "val")
     # dataset_val.prepare()
 
@@ -582,6 +592,46 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
         vwriter.release()
     print("Saved to ", file_name)
 
+def evaluate_model(model, config):
+    """
+    Evaluate the loaded model on the target dataset
+    :param model: the architecture model, with loaded weights
+    :param config: the configuration class for this dataset
+    """
+
+    # Automatically discriminate the dataset according to the config file
+    if isinstance(config, TabletopConfigInference):
+        # Load the validation dataset
+        dataset_val = TabletopDataset()
+    elif isinstance(config, YCBVideoConfigInference):
+        dataset_val = YCBVideoDataset()
+
+    dataset_val.load_dataset(args.dataset, "val")
+    dataset_val.prepare()
+
+    # Compute VOC-Style mAP @ IoU=0.5
+    # Running on 10 images. Increase for better accuracy.
+    image_ids = np.random.choice(dataset_val.image_ids, 10)
+    APs = []
+    for image_id in image_ids:
+        # Load image and ground truth data
+        image, image_meta, gt_class_id, gt_bbox, gt_mask = \
+            modellib.load_image_gt(dataset_val, config,
+                                   image_id, use_mini_mask=False)
+        molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
+        # Run object detection
+        results = model.detect([image], verbose=0)
+        r = results[0]
+        # Compute AP
+        AP, precisions, recalls, overlaps = \
+            utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
+                             r["rois"], r["class_ids"], r["scores"], r['masks'])
+        APs.append(AP)
+
+    print("mAP: ", np.mean(APs))
+
+    return APs
+
 
 ############################################################
 #  Training
@@ -595,7 +645,7 @@ if __name__ == '__main__':
         description='Train Mask R-CNN to detect balloons.')
     parser.add_argument("command",
                         metavar="<command>",
-                        help="'train' or 'splash'")
+                        help="'train', 'splash', 'evaluate'")
     parser.add_argument('--dataset', required=False,
                         metavar="/path/to/balloon/dataset/",
                         help='Directory of the Balloon dataset')
@@ -628,11 +678,11 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        config = TabletopConfigTraining()
-        # config = YCBVideoConfigTraining()
+        # config = TabletopConfigTraining()
+        config = YCBVideoConfigTraining()
     else:
-        config = TabletopConfigInference()
-        # config = YCBVideoConfigInference()
+        # config = TabletopConfigInference()
+        config = YCBVideoConfigInference()
     
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -675,10 +725,12 @@ if __name__ == '__main__':
 
     # Train or evaluate
     if args.command == "train":
-        train(model)
+        train(model, config)
     elif args.command == "splash":
         detect_and_color_splash(model, image_path=args.image,
                                 video_path=args.video)
+    elif args.command == 'evaluate':
+        evaluate_model(model, config)
     else:
         print("'{}' is not recognized. "
-              "Use 'train' or 'splash'".format(args.command))
+              "Use 'train', 'splash' or 'evaluate'".format(args.command))
