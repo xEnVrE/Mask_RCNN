@@ -68,8 +68,8 @@ class TabletopConfigTraining(Config):
     IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
-    GPU_COUNT = 3
-    GPU_ID = "0,1,2"
+    GPU_COUNT = 4
+    GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 21  # Background + random YCB objects
@@ -84,7 +84,7 @@ class TabletopConfigTraining(Config):
     EPOCHS = 100
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.8
+    DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
@@ -125,8 +125,8 @@ class YCBVideoConfigTraining(Config):
     IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
-    GPU_COUNT = 3
-    GPU_ID = "0,1,2"
+    GPU_COUNT = 4
+    GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
@@ -494,21 +494,12 @@ def train(model, config):
         dataset_train = YCBVideoDataset()
         dataset_val = YCBVideoDataset()
 
-    # # Training dataset
-    # dataset_train = TabletopDataset()
-    # dataset_train.load_dataset(args.dataset, "train")
-    # dataset_train.prepare()
-    #
-    # # Validation dataset
-    # dataset_val = TabletopDataset()
-    # dataset_val.load_dataset(args.dataset, "val")
-    # dataset_val.prepare()
-
-    # dataset_train = YCBVideoDataset()
     dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
 
-    # dataset_val = YCBVideoDataset()
+    #dataset_val = YCBVideoDataset()
+    dataset_val = TabletopDataset()
+
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
 
@@ -683,7 +674,7 @@ if __name__ == '__main__':
     else:
         # config = TabletopConfigInference()
         config = YCBVideoConfigInference()
-    
+
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
