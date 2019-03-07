@@ -600,7 +600,7 @@ def evaluate_model(model, config):
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
 
-    # Compute VOC-Style mAP @ IoU=0.5
+    # Compute COCO-Style mAP @ IoU=0.5-0.95 in 0.05 increments
     # Running on 10 images. Increase for better accuracy.
     image_ids = np.random.choice(dataset_val.image_ids, 10)
     APs = []
@@ -613,10 +613,10 @@ def evaluate_model(model, config):
         # Run object detection
         results = model.detect([image], verbose=0)
         r = results[0]
-        # Compute AP
-        AP, precisions, recalls, overlaps = \
-            utils.compute_ap(gt_bbox, gt_class_id, gt_mask,
-                             r["rois"], r["class_ids"], r["scores"], r['masks'])
+        # Compute mAP at different IoU (as msCOCO mAP is computed)
+        AP = utils.compute_ap_range(gt_bbox, gt_class_id, gt_mask,
+                                    r["rois"], r["class_ids"],
+                                    r["scores"], r['masks'])
         APs.append(AP)
 
     print("mAP: ", np.mean(APs))
