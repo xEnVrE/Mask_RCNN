@@ -604,9 +604,14 @@ def evaluate_model(model, config):
     # Running on 10 images. Increase for better accuracy.
     image_ids = np.random.choice(dataset_val.image_ids, 10)
     APs = []
+    AP50s = []
+    AP75s = []
     image_batch_vector = []
     image_batch_eval_data = []
     img_batch_count = 0
+
+    import time
+    t_inference = 0
 
     class image_eval_data:
         def __init__(self, image_id, gt_class_id, gt_bbox, gt_mask):
@@ -633,7 +638,9 @@ def evaluate_model(model, config):
 
         #molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
         # Run object detection
+        t_start = time.time()
         results = model.detect(image_batch_vector, verbose=0)
+        t_inference += t_inference + (time.time() - t_start)
 
         assert len(image_batch_eval_data) == len(results)
 
@@ -644,15 +651,35 @@ def evaluate_model(model, config):
                                         eval_data.DETECTION_RESULTS["rois"],
                                         eval_data.DETECTION_RESULTS["class_ids"],
                                         eval_data.DETECTION_RESULTS["scores"],
-                                        eval_data.DETECTION_RESULTS['masks'])
+                                        eval_data.DETECTION_RESULTS['masks'],
+                                        verbose=0)
+            AP50, _, _, _ = utils.compute_ap(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
+                                        eval_data.DETECTION_RESULTS["rois"],
+                                        eval_data.DETECTION_RESULTS["class_ids"],
+                                        eval_data.DETECTION_RESULTS["scores"],
+                                        eval_data.DETECTION_RESULTS['masks'],
+                                        iou_threshold=0.5)
+            AP75, _, _, _ = utils.compute_ap(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
+                                        eval_data.DETECTION_RESULTS["rois"],
+                                        eval_data.DETECTION_RESULTS["class_ids"],
+                                        eval_data.DETECTION_RESULTS["scores"],
+                                        eval_data.DETECTION_RESULTS['masks'],
+                                        iou_threshold=0.75)
+
             APs.append(AP)
+            AP50s.append(AP50)
+            AP75s.append(AP75)
 
         # Reset the batch info
         image_batch_vector = []
         image_batch_eval_data = []
         img_batch_count = 0
 
-    print("mAP: ", np.mean(APs))
+    print("mAP[0.5::0.05::0.95]: ", np.mean(APs))
+    print("mAP[0.5]: ", np.mean(AP50s))
+    print("mAP[0.75]: ", np.mean(AP75s))
+
+    print("Inference time for", len(image_ids), "images: ", t_inference/1000, "s\tAverage FPS: ", len(image_ids)/t_inference * 1000)
 
     return APs
 
