@@ -250,10 +250,10 @@ class YCBVideoDataset(utils.Dataset):
                     mask_path = mask_path,
                     mask_ids = instance_ids
                 )
-           
+
             # Keep track of progress
-            if progress_idx%progress_step == 0:
-                progbar.update(progress_idx)
+            if progress_idx%progress_step == 0 or progress_idx == len(frame_file_list):
+                progbar.update(progress_idx+1)
 
         print("\nDataset loaded: ", len(self.image_info), "images found.")
 
