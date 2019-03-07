@@ -604,20 +604,53 @@ def evaluate_model(model, config):
     # Running on 10 images. Increase for better accuracy.
     image_ids = np.random.choice(dataset_val.image_ids, 10)
     APs = []
+    image_batch_vector = []
+    image_batch_eval_data = []
+    img_batch_count = 0
+
+    class image_eval_data:
+        def __init__(self, image_id, gt_class_id, gt_bbox, gt_mask):
+            self.IMAGE_ID = image_id
+            self.GT_CLASS_ID = gt_class_id
+            self.GT_BBOX = gt_bbox
+            self.GT_MASK = gt_mask
+            self.DETECTION_RESULTS = None
+
     for image_id in image_ids:
         # Load image and ground truth data
         image, image_meta, gt_class_id, gt_bbox, gt_mask = \
             modellib.load_image_gt(dataset_val, config,
                                    image_id, use_mini_mask=False)
-        molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
+
+        # Compose a vector of images and data
+        image_batch_vector.append(image)
+        image_batch_eval_data.append(image_eval_data(image_id, gt_class_id, gt_bbox, gt_mask))
+        img_batch_count += 1
+
+        # If a batch is ready, go on to detection
+        if img_batch_count < config.BATCH_SIZE:
+            continue
+
+        #molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
         # Run object detection
-        results = model.detect([image], verbose=0)
-        r = results[0]
-        # Compute mAP at different IoU (as msCOCO mAP is computed)
-        AP = utils.compute_ap_range(gt_bbox, gt_class_id, gt_mask,
-                                    r["rois"], r["class_ids"],
-                                    r["scores"], r['masks'])
-        APs.append(AP)
+        results = model.detect(image_batch_vector, verbose=0)
+
+        assert len(image_batch_eval_data) == len(results)
+
+        for eval_data, detection_results in zip(image_batch_eval_data, results):
+            eval_data.DETECTION_RESULTS = detection_results
+            # Compute mAP at different IoU (as msCOCO mAP is computed)
+            AP = utils.compute_ap_range(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
+                                        eval_data.DETECTION_RESULTS["rois"],
+                                        eval_data.DETECTION_RESULTS["class_ids"],
+                                        eval_data.DETECTION_RESULTS["scores"],
+                                        eval_data.DETECTION_RESULTS['masks'])
+            APs.append(AP)
+
+        # Reset the batch info
+        image_batch_vector = []
+        image_batch_eval_data = []
+        img_batch_count = 0
 
     print("mAP: ", np.mean(APs))
 
