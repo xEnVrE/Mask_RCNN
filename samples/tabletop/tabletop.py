@@ -415,6 +415,7 @@ class TabletopDataset(utils.Dataset):
 
         progress_step = max(round(len(dataset_dict['Images'].keys()) / 1000), 1)
         progbar = Progbar(target=len(dataset_dict['Images'].keys()))
+
         print("Loading ", subset, "dataset...")
 
         # Iterate over images in the dataset to add them
