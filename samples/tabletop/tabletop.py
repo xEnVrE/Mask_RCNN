@@ -201,6 +201,8 @@ class YCBVideoDataset(utils.Dataset):
         # Background has id 0, but it is not included in the class list
         for class_id, class_name in  enumerate(class_list):
             self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
+            
+        self.class_names = [cl['name'] for cl in self.class_info]
 
     def load_dataset(self, dataset_root, subset):
         """
@@ -359,6 +361,8 @@ class TabletopDataset(utils.Dataset):
             if class_name == '__background__':
                 continue
             self.add_class('tabletop', class_id = class_id, class_name = class_name)
+            
+        self.class_names = [cl['name'] for cl in self.class_info]
 
     def load_dataset(self, dataset_root, subset):
         """
