@@ -61,7 +61,7 @@ class TabletopConfigTraining(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "mask_rcnn_synth_tabletop_training"
+    NAME = "synth_tabletop_training"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
@@ -94,7 +94,7 @@ class TabletopConfigInference(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "mask_rcnn_synth_tabletop_inference"
+    NAME = "synth_tabletop_inference"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
@@ -111,7 +111,7 @@ class TabletopConfigInference(Config):
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.7
+    DETECTION_MIN_CONFIDENCE = 0.9
 
 class YCBVideoConfigTraining(Config):
     """Configuration for training on the YCB_Video dataset for segmentation.
@@ -168,7 +168,7 @@ class YCBVideoConfigInference(Config):
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.7
+    DETECTION_MIN_CONFIDENCE = 0.9
 
 
 ############################################################
@@ -409,8 +409,12 @@ class TabletopDataset(utils.Dataset):
         # Annotations = bounding boxes of object instances in the image
         # MaskID = correspondences between mask colors and class label
 
+        progress_step = max(round(len(dataset_dict['Images'].keys()) / 1000), 1)
+        progbar = Progbar(target=len(dataset_dict['Images'].keys()))
+        print("Loading ", subset, "dataset...")
+
         # Iterate over images in the dataset to add them
-        for path, info in dataset_dict['Images'].items():
+        for progress_idx, (path, info) in enumerate(dataset_dict['Images'].items()):
             image_path = os.path.join(subset_dir, path)
             image = skimage.io.imread(image_path)
             height, width = image.shape[:2]
@@ -422,6 +426,10 @@ class TabletopDataset(utils.Dataset):
                 width = width, height = height,
                 mask_path = os.path.join(subset_dir, info['MaskPath']),
                 mask_ids = info['MaskID'])
+
+            # Keep track of progress
+            if progress_idx%progress_step == 0 or progress_idx == len(dataset_dict['Images'].keys()):
+                progbar.update(progress_idx+1)
 
     def get_class_id(self, image_text_label):
         """Return class id according to the image textual label
@@ -601,8 +609,9 @@ def evaluate_model(model, config):
     dataset_val.prepare()
 
     # Compute COCO-Style mAP @ IoU=0.5-0.95 in 0.05 increments
-    # Running on 10 images. Increase for better accuracy.
-    image_ids = np.random.choice(dataset_val.image_ids, 10)
+    # Running on all images
+    #image_ids = np.random.choice(dataset_val.image_ids, 200)
+    image_ids = dataset_val.image_ids
     APs = []
     AP50s = []
     AP75s = []
@@ -621,7 +630,11 @@ def evaluate_model(model, config):
             self.GT_MASK = gt_mask
             self.DETECTION_RESULTS = None
 
-    for image_id in image_ids:
+    print("Evaluating model...")
+    progbar = Progbar(target = len(image_ids))
+
+
+    for idx, image_id in enumerate(image_ids):
         # Load image and ground truth data
         image, image_meta, gt_class_id, gt_bbox, gt_mask = \
             modellib.load_image_gt(dataset_val, config,
@@ -633,14 +646,14 @@ def evaluate_model(model, config):
         img_batch_count += 1
 
         # If a batch is ready, go on to detection
+        # The last few images in the dataset will not be used if batch size > 1
         if img_batch_count < config.BATCH_SIZE:
             continue
 
-        #molded_images = np.expand_dims(modellib.mold_image(image, config), 0)
         # Run object detection
         t_start = time.time()
         results = model.detect(image_batch_vector, verbose=0)
-        t_inference += t_inference + (time.time() - t_start)
+        t_inference += (time.time() - t_start)
 
         assert len(image_batch_eval_data) == len(results)
 
@@ -675,11 +688,13 @@ def evaluate_model(model, config):
         image_batch_eval_data = []
         img_batch_count = 0
 
-    print("mAP[0.5::0.05::0.95]: ", np.mean(APs))
+        progbar.update(idx+1)
+
+    print("\nmAP[0.5::0.05::0.95]: ", np.mean(APs))
     print("mAP[0.5]: ", np.mean(AP50s))
     print("mAP[0.75]: ", np.mean(AP75s))
 
-    print("Inference time for", len(image_ids), "images: ", t_inference/1000, "s\tAverage FPS: ", len(image_ids)/t_inference * 1000)
+    print("Inference time for", len(image_ids), "images: ", t_inference, "s \tAverage FPS: ", len(image_ids)/t_inference)
 
     return APs
 
@@ -729,10 +744,10 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        # config = TabletopConfigTraining()
-        config = YCBVideoConfigTraining()
+        config = TabletopConfigTraining()
+        #config = YCBVideoConfigTraining()
     else:
-        # config = TabletopConfigInference()
+        #config = TabletopConfigInference()
         config = YCBVideoConfigInference()
 
     # Add some env variables to set GPU usage
