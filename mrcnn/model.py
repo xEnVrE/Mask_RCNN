@@ -2173,7 +2173,11 @@ class MaskRCNN():
             # Warning: for tensorflow <= 1.4 keepdims must be keep_dims
             # in order not to break compatibility
             # TODO: keep only tf > 1.4 as dependency
-            if (int(tf.__version__[0])*100 + int(tf.__version__[2])*10 < 150):
+
+            tf_version =tf.__version__
+            tf_version = tf_version.split('.')
+
+            if (int(tf_version[0]) <= 1) and (int(tf_version[1]) <= 4):
                 loss = (
                     tf.reduce_mean(layer.output, keep_dims=True)
                     * self.config.LOSS_WEIGHTS.get(name, 1.))
@@ -2205,7 +2209,11 @@ class MaskRCNN():
             # Warning: for tensorflow <= 1.4 keepdims must be keep_dims
             # in order not to break compatibility
             # TODO: keep only tf > 1.4 as dependency
-            if (int(tf.__version__[0])*100 + int(tf.__version__[2])*10 < 150):
+
+            tf_version = tf.__version__
+            tf_version = tf_version.split('.')
+
+            if (int(tf_version[0]) <= 1) and (int(tf_version[1]) <= 4):
                 loss = (
                     tf.reduce_mean(layer.output, keep_dims=True)
                     * self.config.LOSS_WEIGHTS.get(name, 1.))
