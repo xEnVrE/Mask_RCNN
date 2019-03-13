@@ -34,7 +34,9 @@ import datetime
 import numpy as np
 import skimage.draw
 import scipy.io
+import cv2
 from keras.utils.generic_utils import Progbar
+from mrcnn import visualize
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -526,43 +528,97 @@ def train(model, config):
                 epochs=config.EPOCHS,
                 layers=config.LAYERS_TUNE)
 
-def color_splash(image, mask):
-    """Apply color splash effect.
-    image: RGB image [height, width, 3]
-    mask: instance segmentation mask [height, width, instance count]
+def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
 
-    Returns result image.
-    """
-    # Make a grayscale copy of the image. The grayscale copy still
-    # has 3 RGB channels, though.
-    gray = skimage.color.gray2rgb(skimage.color.rgb2gray(image)) * 255
-    # Copy color pixels from the original color image where mask is set
-    if mask.shape[-1] > 0:
-        # We're treating all instances as one, so collapse the mask into one layer
-        mask = (np.sum(mask, -1, keepdims=True) >= 1)
-        splash = np.where(mask, image, gray).astype(np.uint8)
-    else:
-        splash = gray.astype(np.uint8)
-    return splash
 
-def detect_and_color_splash(model, image_path=None, video_path=None):
+    # Image is supposed to be RGB, 8-bit 3 channels
+    # Masks is an array of bool maps [image_height, image_width, no_of_masks]
+    # Bboxes is an array of bboxes in the tuple form (y1, x1, y2, x2)
+    # Color is supposed to be a dict with correspondences between class names and colors (float 3d tuples)
+    # Opacity: 0.5
+    opacity = 0.5
+
+    result = image.astype(float)/255
+
+    for detection_idx in range(masks.shape[2]):
+
+        if not np.any(bboxes[detection_idx]):
+            # Skip this instance. Has no bbox. Likely lost in image cropping.
+            continue
+
+        # Get the color in float form
+        color = colors[class_names[class_ids[detection_idx]]]
+
+        # Draw the segmentation mask
+        mask = masks[:,:,detection_idx]
+        alpha_mask = np.stack((mask, mask, mask), axis=2)
+        alpha_mask = alpha_mask.astype(np.float) * opacity
+        assert alpha_mask.shape == image.shape
+
+        foreground = np.ones(image.shape, dtype=float) * color
+        _background = cv2.multiply(1.0 - alpha_mask, result)
+        _foreground = cv2.multiply(alpha_mask, foreground)
+
+        result = cv2.add(_foreground, _background)
+
+        # Draw the bounding box
+        y1, x1, y2, x2 = bboxes[detection_idx]
+        cv2.rectangle(result, (x1, y1), (x2, y2), color, thickness=1)
+
+        # Caption time
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        fontScale = 0.3
+        lineType = 2
+        offset_x_text = 2
+        offset_y_text = -4
+        label = class_names[class_ids[detection_idx]]
+        caption = "{} {:.3f}".format(label, scores[detection_idx]) if scores.any() else label
+
+        cv2.putText(result, caption, (x1 + offset_x_text, y2 + offset_y_text), fontFace=font, fontScale=fontScale,
+                    color=(1.0, 1.0, 1.0), lineType=lineType)
+
+    result *= 255
+    result = result.astype(np.uint8)
+
+    return result
+
+def detect_and_splash_results(model, config, image_path=None, video_path=None):
+
     assert image_path or video_path
+
+    # Automatically discriminate the dataset according to the config file
+    if isinstance(config, TabletopConfigInference):
+        # Load the validation dataset
+        dataset = TabletopDataset()
+    elif isinstance(config, YCBVideoConfigInference):
+        dataset = YCBVideoDataset()
+
+    dataset.load_dataset(args.dataset, "val")
+    dataset.prepare()
+
+    # Create a dict for assigning colors to each class
+    class_colors = {}
+    random_class_colors = visualize.random_colors(len(dataset.class_names))
+    class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, dataset.class_names)}
 
     # Image or video?
     if image_path:
         # Run model detection and generate the color splash effect
         print("Running on {}".format(args.image))
         # Read image
-        image = skimage.io.imread(args.image)
+        image = cv2.imread(args.image)
+        # OpenCV returns images as BGR, convert to RGB
+        image = image[..., ::-1]
         # Detect objects
         r = model.detect([image], verbose=1)[0]
         # Color splash
-        splash = color_splash(image, r['masks'])
+        splash = apply_detection_results(image, r['masks'], r['rois'], r['class_ids'], dataset.class_names, class_colors, scores=r['scores'])
+        # Back to BGR for OPENCV
+        splash = splash[..., ::-1]
         # Save output
         file_name = "splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
-        skimage.io.imsave(file_name, splash)
+        cv2.imwrite(file_name, splash)
     elif video_path:
-        import cv2
         # Video capture
         vcapture = cv2.VideoCapture(video_path)
         width = int(vcapture.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -587,7 +643,7 @@ def detect_and_color_splash(model, image_path=None, video_path=None):
                 # Detect objects
                 r = model.detect([image], verbose=0)[0]
                 # Color splash
-                splash = color_splash(image, r['masks'])
+                splash = apply_detection_results(image, r['masks'], r['rois'], r['class_ids'], dataset.class_names, class_colors, scores=r['scores'])
                 # RGB -> BGR to save image to video
                 splash = splash[..., ::-1]
                 # Add image to video writer
@@ -713,13 +769,13 @@ if __name__ == '__main__':
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN to detect balloons.')
+        description='Train Mask R-CNN to detect objects.')
     parser.add_argument("command",
                         metavar="<command>",
                         help="'train', 'splash', 'evaluate'")
     parser.add_argument('--dataset', required=False,
-                        metavar="/path/to/balloon/dataset/",
-                        help='Directory of the Balloon dataset')
+                        metavar="/path/to/dataset/",
+                        help='Directory of the dataset')
     parser.add_argument('--weights', required=True,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
@@ -729,10 +785,10 @@ if __name__ == '__main__':
                         help='Logs and checkpoints directory (default=logs/)')
     parser.add_argument('--image', required=False,
                         metavar="path or URL to image",
-                        help='Image to apply the color splash effect on')
+                        help='Image to detect objects on')
     parser.add_argument('--video', required=False,
                         metavar="path or URL to video",
-                        help='Video to apply the color splash effect on')
+                        help='Video to detect objects on')
     args = parser.parse_args()
 
     # Validate arguments
@@ -798,8 +854,8 @@ if __name__ == '__main__':
     if args.command == "train":
         train(model, config)
     elif args.command == "splash":
-        detect_and_color_splash(model, image_path=args.image,
-                                video_path=args.video)
+        detect_and_splash_results(model, image_path=args.image,
+                                video_path=args.video, config=config)
     elif args.command == 'evaluate':
         evaluate_model(model, config)
     else:
