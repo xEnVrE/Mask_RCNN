@@ -36,7 +36,6 @@ import skimage.draw
 import scipy.io
 import cv2
 from keras.utils.generic_utils import Progbar
-from mrcnn import visualize
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -593,12 +592,30 @@ def detect_and_splash_results(model, config, image_path=None, video_path=None):
     elif isinstance(config, YCBVideoConfigInference):
         dataset = YCBVideoDataset()
 
-    dataset.load_dataset(args.dataset, "val")
-    dataset.prepare()
+    # No need to load the whole dataset, just the class names will be ok
+    class_list = dataset.parse_class_list(args.dataset)
+    dataset.load_class_names(class_list)
 
     # Create a dict for assigning colors to each class
     class_colors = {}
-    random_class_colors = visualize.random_colors(len(dataset.class_names))
+
+    #TODO: REMOVE THIS IF PYTHON-TKINTER IS INSTALLED ON SERVER
+    def random_colors(N, bright=True):
+        """
+        Generate random colors.
+        To get visually distinct colors, generate them in HSV space then
+        convert to RGB.
+        """
+        import random
+        import colorsys
+
+        brightness = 1.0 if bright else 0.7
+        hsv = [(i / N, 1, brightness) for i in range(N)]
+        colors = list(map(lambda c: colorsys.hsv_to_rgb(*c), hsv))
+        random.shuffle(colors)
+        return colors
+
+    random_class_colors = random_colors(len(dataset.class_names))
     class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, dataset.class_names)}
 
     # Image or video?
