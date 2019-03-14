@@ -1,30 +1,32 @@
 """
 Mask R-CNN
-Train on the toy Balloon dataset and implement color splash effect.
 
 Copyright (c) 2018 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
+
+Train, Detect and Evaluate on a Tabletop dataset
+Adapted by Fabrizio Bottarel (fabrizio.bottarel@iit.it)
 
 ------------------------------------------------------------
 
 Usage: import the module (see Jupyter notebooks for examples), or run from
        the command line as such:
 
-    # Train a new model starting from pre-trained COCO weights
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=coco
+    # Train a new model starting from pre-trained COCO or imagenet weights
+    python3 tabletop.py train --dataset=/path/to/dataset/root --weights=[coco, imagenet]
 
     # Resume training a model that you had trained earlier
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=last
+    python3 tabletop.py train --dataset=/path/to/dataset/root --weights=last
 
     # Train a new model starting from ImageNet weights
-    python3 balloon.py train --dataset=/path/to/balloon/dataset --weights=imagenet
+    python3 tabletop.py train --dataset=/path/to/balloon/dataset --weights=imagenet
 
-    # Apply color splash to an image
-    python3 balloon.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
+    # Splash results to an image
+    python3 tabletop.py splash --weights=/path/to/weights/file.h5 --image=<URL or path to file>
 
-    # Apply color splash to video using the last weights you trained
-    python3 balloon.py splash --weights=last --video=<URL or path to file>
+    # Splash results to video using the last weights you trained
+    python3 tabletop.py splash --weights=last --video=<URL or path to file>
 """
 
 import os
@@ -55,7 +57,6 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 ############################################################
 #  Configurations
 ############################################################
-
 
 class TabletopConfigTraining(Config):
     """Configuration for training on the synthetic tabletop dataset.
@@ -171,10 +172,10 @@ class YCBVideoConfigInference(Config):
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.9
 
+############################################################
+#  Datasets
+############################################################
 
-############################################################
-#  Dataset
-############################################################
 class YCBVideoDataset(utils.Dataset):
 
     def parse_class_list(self, dataset_root):
@@ -495,6 +496,10 @@ class TabletopDataset(utils.Dataset):
         else:
             super(self.__class__, self).image_reference(image_id)
 
+############################################################
+#  Utils
+############################################################
+
 def train(model, config):
     """Train the model."""
 
@@ -528,13 +533,19 @@ def train(model, config):
                 layers=config.LAYERS_TUNE)
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
+    """
+    Performs inference on target image and draws them on a return image.
+    :param image (np.ndarray): 3-channel, 8-bit RGB image. Size must be according to CONFIG file (default 640x480)
+    :param masks (np.ndarray): binary array of size [height, width, no_of_detections]
+    :param bboxes (list): list of bboxes. Each bbox is a tuple (y1, x1, y2, x2)
+    :param class_ids (list): one numerical ID for each detection
+    :param class_names (list): string of class names, as given by Dataset.class_names
+    :param colors (dict): keys are class names, values are float [0 : 1] 3d tuples representing RGB color
+    :param scores (list): list of scores, one for each detection
+    :return: result (image): image with detection results splashed on it, 3-channel, 8-bit RGB image
+    """
 
-
-    # Image is supposed to be RGB, 8-bit 3 channels
-    # Masks is an array of bool maps [image_height, image_width, no_of_masks]
-    # Bboxes is an array of bboxes in the tuple form (y1, x1, y2, x2)
-    # Color is supposed to be a dict with correspondences between class names and colors (float 3d tuples)
-    # Opacity: 0.5
+    # Opacity of masks: 0.5
     opacity = 0.5
 
     result = image.astype(float)/255
@@ -776,9 +787,8 @@ def evaluate_model(model, config):
 
     return APs
 
-
 ############################################################
-#  Training
+#  Main script
 ############################################################
 
 if __name__ == '__main__':
