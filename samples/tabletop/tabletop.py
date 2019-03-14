@@ -193,18 +193,25 @@ class YCBVideoDataset(utils.Dataset):
 
         return classes_list
 
-    def load_class_names(self, class_list):
+    def load_class_names(self, dataset_root, verbose=True):
         """
         Loads the class list into the Dataset class, without opening any metadata file
-        :param class_list (list): list of class names (order defines the id)
+        :param dataset_root (string): root directory of the dataset.
         """
 
         # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
         # Background has id 0, but it is not included in the class list
+        class_list = self.parse_class_list(dataset_root)
+
         for class_id, class_name in  enumerate(class_list):
             self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
             
         self.class_names = [cl['name'] for cl in self.class_info]
+
+        if verbose:
+            print("Classes loaded: ", len(self.class_names))
+            for cl in self.class_info:
+                print("\tID {}:\t{}".format(cl['id'], cl['name']))
 
     def load_dataset(self, dataset_root, subset):
         """
@@ -217,8 +224,7 @@ class YCBVideoDataset(utils.Dataset):
         assert subset in ["train", "val"]
 
         # Add the classes (order is vital for mask id consistency)
-        class_list = self.parse_class_list(dataset_root)
-        self.load_class_names(class_list)
+        self.load_class_names(dataset_root)
 
         # Discriminate between train and validation set
         subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
@@ -326,7 +332,6 @@ class TabletopDataset(utils.Dataset):
         Parses the class list from the meta file of the dataset.
         Does not include background as a class
         :param dataset_root (string): root directory of the dataset
-        :param subset (string): train or val
         :return: class_list (list): ordered list of classes
         """
         # Very inefficient, needs to open the whole json file!
@@ -351,7 +356,7 @@ class TabletopDataset(utils.Dataset):
 
         return class_list
 
-    def load_class_names(self, class_list):
+    def load_class_names(self, dataset_root, verbose=True):
         """
         Loads the class list into the Dataset class, without opening any metadata file
         :param class_list (list): list of class names (order defines the id)
@@ -359,12 +364,18 @@ class TabletopDataset(utils.Dataset):
 
         # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
         # Background has id 0, but it is not included in the class list
+        class_list = self.parse_class_list(dataset_root)
+
         for class_id, class_name in enumerate(class_list):
             if class_name == '__background__':
                 continue
             self.add_class('tabletop', class_id = class_id, class_name = class_name)
-            
+
         self.class_names = [cl['name'] for cl in self.class_info]
+        if verbose:
+            print("Classes loaded: ", len(self.class_names))
+            for cl in self.class_info:
+                print("\tID {}:\t{}".format(cl['id'], cl['name']))
 
     def load_dataset(self, dataset_root, subset):
         """
@@ -384,8 +395,7 @@ class TabletopDataset(utils.Dataset):
         with (open(DATASET_JSON_FILENAME, 'r')) as handle:
             dataset_dict = json.loads(json.load(handle))
 
-        class_list = self.parse_class_list(dataset_root)
-        self.load_class_names(class_list)
+        self.load_class_names(dataset_root)
 
         # fix the maskID field
         for path, info in dataset_dict['Images'].items():
@@ -604,8 +614,7 @@ def detect_and_splash_results(model, config, image_path=None, video_path=None):
         dataset = YCBVideoDataset()
 
     # No need to load the whole dataset, just the class names will be ok
-    class_list = dataset.parse_class_list(args.dataset)
-    dataset.load_class_names(class_list)
+    dataset.load_class_names(args.dataset)
 
     # Create a dict for assigning colors to each class
     class_colors = {}
