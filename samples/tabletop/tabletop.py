@@ -602,41 +602,9 @@ def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors
 
     return result
 
-def detect_and_splash_results(model, config, image_path=None, video_path=None):
+def detect_and_splash_results(model, config, dataset, class_colors, image_path=None, video_path=None):
 
     assert image_path or video_path
-
-    # Automatically discriminate the dataset according to the config file
-    if isinstance(config, TabletopConfigInference):
-        # Load the validation dataset
-        dataset = TabletopDataset()
-    elif isinstance(config, YCBVideoConfigInference):
-        dataset = YCBVideoDataset()
-
-    # No need to load the whole dataset, just the class names will be ok
-    dataset.load_class_names(args.dataset)
-
-    # Create a dict for assigning colors to each class
-    class_colors = {}
-
-    #TODO: REMOVE THIS IF PYTHON-TKINTER IS INSTALLED ON SERVER
-    def random_colors(N, bright=True):
-        """
-        Generate random colors.
-        To get visually distinct colors, generate them in HSV space then
-        convert to RGB.
-        """
-        import random
-        import colorsys
-
-        brightness = 1.0 if bright else 0.7
-        hsv = [(i / N, 1, brightness) for i in range(N)]
-        colors = list(map(lambda c: colorsys.hsv_to_rgb(*c), hsv))
-        random.shuffle(colors)
-        return colors
-
-    random_class_colors = random_colors(len(dataset.class_names))
-    class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, dataset.class_names)}
 
     # Image or video?
     if image_path:
@@ -796,6 +764,22 @@ def evaluate_model(model, config):
 
     return APs
 
+# TODO: REMOVE THIS IF PYTHON-TKINTER IS INSTALLED ON SERVER
+def random_colors(N, bright=True):
+    """
+    Generate random colors.
+    To get visually distinct colors, generate them in HSV space then
+    convert to RGB.
+    """
+    import random
+    import colorsys
+
+    brightness = 1.0 if bright else 0.7
+    hsv = [(i / N, 1, brightness) for i in range(N)]
+    colors = list(map(lambda c: colorsys.hsv_to_rgb(*c), hsv))
+    random.shuffle(colors)
+    return colors
+
 ############################################################
 #  Main script
 ############################################################
@@ -890,8 +874,27 @@ if __name__ == '__main__':
     if args.command == "train":
         train(model, config)
     elif args.command == "splash":
+
+        #TODO: BRING DATASET INSTANTIATION OUT OF THIS IF STATEMENT
+
+        # Automatically discriminate the dataset according to the config file
+        if isinstance(config, TabletopConfigInference):
+            # Load the validation dataset
+            dataset = TabletopDataset()
+        elif isinstance(config, YCBVideoConfigInference):
+            dataset = YCBVideoDataset()
+
+        # No need to load the whole dataset, just the class names will be ok
+        dataset.load_class_names(args.dataset)
+
+        # Create a dict for assigning colors to each class
+        class_colors = {}
+        random_class_colors = random_colors(len(dataset.class_names))
+        class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, dataset.class_names)}
+
         detect_and_splash_results(model, image_path=args.image,
-                                video_path=args.video, config=config)
+                                video_path=args.video, config=config, dataset=dataset, class_colors=class_colors)
+
     elif args.command == 'evaluate':
         evaluate_model(model, config)
     else:
