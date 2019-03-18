@@ -80,7 +80,7 @@ class TabletopConfigTraining(Config):
     BACKBONE = "resnet50"
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
+    STEPS_PER_EPOCH = None
 
     # Number of epochs
     EPOCHS = 100
@@ -131,13 +131,13 @@ class YCBVideoConfigTraining(Config):
     GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
+    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
 
     # Specify the backbone network
     BACKBONE = "resnet50"
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = 100
+    STEPS_PER_EPOCH = None
 
     # Number of epochs
     EPOCHS = 100
@@ -147,6 +147,8 @@ class YCBVideoConfigTraining(Config):
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
+
+    REMOVE_WOOD_BLOCK = True
 
 class YCBVideoConfigInference(Config):
     """Configuration for performing inference with the YCB_Video dataset for segmentation.
@@ -164,13 +166,15 @@ class YCBVideoConfigInference(Config):
     GPU_ID = "0"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 21  # Background + 21 YCB objects
+    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
 
     # Specify the backbone network
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.9
+
+    REMOVE_WOOD_BLOCK = True
 
 ############################################################
 #  Datasets
@@ -193,7 +197,7 @@ class YCBVideoDataset(utils.Dataset):
 
         return classes_list
 
-    def load_class_names(self, dataset_root, verbose=True):
+    def load_class_names(self, dataset_root, verbose=True, remove_wood_block=True):
         """
         Loads the class list into the Dataset class, without opening any metadata file
         :param dataset_root (string): root directory of the dataset.
@@ -204,6 +208,9 @@ class YCBVideoDataset(utils.Dataset):
         class_list = self.parse_class_list(dataset_root)
 
         for class_id, class_name in  enumerate(class_list):
+            # exclude wood block!
+            if remove_wood_block and (class_name == '036_wood_block'):
+                continue
             self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
             
         self.class_names = [cl['name'] for cl in self.class_info]
@@ -213,7 +220,7 @@ class YCBVideoDataset(utils.Dataset):
             for cl in self.class_info:
                 print("\tID {}:\t{}".format(cl['id'], cl['name']))
 
-    def load_dataset(self, dataset_root, subset):
+    def load_dataset(self, dataset_root, subset, remove_wood_block=True):
         """
         Loads the YCB_Video dataset paths (without opening image files).
         :param dataset_root (string): Root directory of the dataset.
@@ -224,7 +231,7 @@ class YCBVideoDataset(utils.Dataset):
         assert subset in ["train", "val"]
 
         # Add the classes (order is vital for mask id consistency)
-        self.load_class_names(dataset_root)
+        self.load_class_names(dataset_root, remove_wood_block=remove_wood_block)
 
         # Discriminate between train and validation set
         subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
@@ -249,6 +256,12 @@ class YCBVideoDataset(utils.Dataset):
             metadata = scipy.io.loadmat(metadata_path)
             instance_ids =  metadata['cls_indexes']
             instance_ids = instance_ids.reshape(instance_ids.size)
+
+            if remove_wood_block:
+                instance_ids[instance_ids != 16]
+                shift_ids = -1 * (instance_ids > 16)
+                instance_ids = instance_ids.astype(np.int64) + shift_ids
+                instance_ids = instance_ids.astype(np.uint8)
 
             # Add an image to the dataset
             if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
@@ -294,7 +307,7 @@ class YCBVideoDataset(utils.Dataset):
         no_of_masks = class_ids.size
         assert no_of_masks > 0
 
-        masks = np.zeros( (image_info["height"], image_info["width"], no_of_masks),
+        masks = np.zeros((image_info["height"], image_info["width"], no_of_masks),
                             dtype=np.bool)
 
         # create boolean masks for each instance, respecting instance id order
@@ -526,21 +539,34 @@ def train(model, config):
     dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
 
-    #dataset_val = YCBVideoDataset()
-    dataset_val = TabletopDataset()
-
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
 
-    # *** This training schedule is an example. Update to your needs ***
-    # Since we're using a very small dataset, and starting from
-    # COCO trained weights, we don't need to train too long. Also,
-    # no need to train all layers, just the heads should do it.
-    print("Training network stages " + config.LAYERS_TUNE)
+    # Experimental: train/validate on whole dataset.
+    # Number of steps must be equal to round_down(dataset_size/batch_size)
+    if config.STEPS_PER_EPOCH == None:
+        config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
+
+    # TRAINING SCHEDULE
+    stages_trained = '3+'
+    print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=config.EPOCHS,
-                layers=config.LAYERS_TUNE)
+                epochs=30,
+                layers=stages_trained)
+    stages_trained = '4+'
+    print("Training network stages" + stages_trained)
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE/5.0,
+                epochs=20,
+                layers=stages_trained)
+    stages_trained = 'heads'
+    print("Training network stages" + stages_trained)
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE/10.0,
+                epochs=10,
+                layers=stages_trained)
+
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
     """
@@ -825,8 +851,8 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        config = TabletopConfigTraining()
-        #config = YCBVideoConfigTraining()
+        #config = TabletopConfigTraining()
+        config = YCBVideoConfigTraining()
     else:
         #config = TabletopConfigInference()
         config = YCBVideoConfigInference()
