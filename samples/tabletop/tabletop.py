@@ -647,7 +647,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         # Back to BGR for OPENCV
         splash = splash[..., ::-1]
         # Save output
-        file_name = "splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
+        file_name = os.path.basename(image_path) + "_splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
         cv2.imwrite(file_name, splash)
     elif video_path:
         # Video capture
@@ -657,7 +657,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         fps = vcapture.get(cv2.CAP_PROP_FPS)
 
         # Define codec and create video writer
-        file_name = "splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
+        file_name = os.path.basename + "_splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
         vwriter = cv2.VideoWriter(file_name,
                                   cv2.VideoWriter_fourcc(*'MJPG'),
                                   fps, (width, height))
