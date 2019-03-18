@@ -89,7 +89,7 @@ class TabletopConfigTraining(Config):
     DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
-    LAYERS_TUNE = '3+'
+    LAYERS_TUNE = '4+'
 
 class TabletopConfigInference(Config):
     """Configuration for training on the synthetic tabletop dataset.
@@ -113,7 +113,7 @@ class TabletopConfigInference(Config):
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.9
+    DETECTION_MIN_CONFIDENCE = 0.75
 
 class YCBVideoConfigTraining(Config):
     """Configuration for training on the YCB_Video dataset for segmentation.
@@ -124,7 +124,7 @@ class YCBVideoConfigTraining(Config):
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 4
+    IMAGES_PER_GPU = 3
 
     # Define number of GPUs to use
     GPU_COUNT = 4
@@ -140,7 +140,7 @@ class YCBVideoConfigTraining(Config):
     STEPS_PER_EPOCH = None
 
     # Number of epochs
-    EPOCHS = 100
+    EPOCHS = 50
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.9
@@ -172,7 +172,7 @@ class YCBVideoConfigInference(Config):
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.9
+    DETECTION_MIN_CONFIDENCE = 0.75
 
     REMOVE_WOOD_BLOCK = True
 
@@ -212,7 +212,7 @@ class YCBVideoDataset(utils.Dataset):
             if remove_wood_block and (class_name == '036_wood_block'):
                 continue
             self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
-            
+
         self.class_names = [cl['name'] for cl in self.class_info]
 
         if verbose:
@@ -567,6 +567,11 @@ def train(model, config):
                 epochs=10,
                 layers=stages_trained)
 
+
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE/10,
+                epochs=80,
+                layers='all')
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
     """
