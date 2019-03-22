@@ -10,23 +10,14 @@ Author: Fabrizio Bottarel (fabrizio.bottarel@iit.it)
 import os
 import sys
 import argparse
-import json
-import datetime
 import numpy as np
-import skimage.draw
-import matplotlib
-import matplotlib.pyplot as plt
-from PIL import Image
-import skimage
 
 #   Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
 
 #   Import Mask R-CNN
 sys.path.append(ROOT_DIR)
-from mrcnn import utils
 import mrcnn.model as modellib
-from mrcnn import visualize
 
 #   Import the tabletop dataset custom configuration
 import tabletop
@@ -66,6 +57,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._output_buf_image = None
         self._output_buf_array = None
 
+        self._port_out_bboxes = None
         self._port_out = None
         self._port_in = None
 
@@ -77,6 +69,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._model_weights_path = os.path.join(MODEL_DIR, args.model_weights_path)
 
         self._model = None
+
+        self._dataset = None
 
         self._class_colors = None
 
@@ -97,7 +91,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         self._input_buf_image = yarp.ImageRgb()
         self._input_buf_image.resize(self._input_img_width, self._input_img_height)
-        #self._input_buf_array = Image.new(mode='RGB', size=(self._input_img_width, self._input_img_height))
         self._input_buf_array = np.ones((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
         self._input_buf_image.setExternal(self._input_buf_array,
                                           self._input_buf_array.shape[1],
@@ -107,15 +100,17 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Output
         #   Output image port initialization
-
         self._port_out = yarp.Port()
-        self._port_out.open('/' + self._module_name + '/outPort:o')
+        self._port_out.open('/' + self._module_name + '/RGBImage:o')
+
+        #   Output blobs port initialization
+        self._port_out_bboxes = yarp.Port()
+        self._port_out_bboxes.open('/' + self._module_name + '/bboxes:o')
 
         #   Output buffer initialization
         self._output_buf_image = yarp.ImageRgb()
         self._output_buf_image.resize(self._input_img_width, self._input_img_height)
-        #self._output_buf_array = Image.new(mode='RGB', size=(self._input_img_width, self._input_img_height))
-        self._output_buf_array = np.zeros((self._input_img_height, self._input_img_width, 1), dtype = np.float32)
+        self._output_buf_array = np.zeros((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
         self._output_buf_image.setExternal(self._output_buf_array,
                                            self._output_buf_array.shape[1],
                                            self._output_buf_array.shape[0])
@@ -134,15 +129,21 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print('Inference model configured')
 
         #   Load class names
-        self._dataset = tabletop.YCBVideoDataset()
-        #self._dataset.load_dataset(os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset"), 'train')
-        #self._dataset.prepare()
-        #self._class_names = self._dataset.class_names
+        dataset_root = os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset")
 
-		# Add the classes (order is vital for mask id consistency)		
-        self._class_names = ['__background__'] + self._dataset.parse_class_list(os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset"))
+        # Automatically discriminate the dataset according to the config file
+        if isinstance(config, tabletop.TabletopConfigInference):
+            # Load the validation dataset
+            self._dataset = tabletop.TabletopDataset()
+        elif isinstance(config, tabletop.YCBVideoConfigInference):
+            self._dataset = tabletop.YCBVideoDataset()
 
-        print("Class names: ", self._class_names)
+        # No need to load the whole dataset, just the class names will be ok
+        self._dataset.load_class_names(dataset_root)
+
+        # Create a dict for assigning colors to each class
+        random_class_colors = tabletop.random_colors(len(self._dataset.class_names))
+        self._class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, self._dataset.class_names)}
 
         #   Load model weights
         try:
@@ -156,20 +157,13 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         print("Model weights loaded")
 
-        #   Visualization setup
-        self._class_colors = {}
-        random_class_colors = visualize.random_colors(len(self._class_names))
-        self._class_colors = {class_id:color for (color, class_id) in zip(random_class_colors, self._class_names)}
-
-        self._figure, self._ax = plt.subplots(1)
-        plt.ion()
-
         return True
 
     def interruptModule(self):
 
         self._port_in.interrupt()
         self._port_out.interrupt()
+        self._port_out_bboxes.interrupt()
 
         return True
 
@@ -177,6 +171,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         self._port_in.close()
         self._port_out.close()
+        self._port_out_bboxes.close()
 
         return True
 
@@ -197,30 +192,34 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             self._input_buf_image.copy(input_img)
             assert self._input_buf_array.__array_interface__['data'][0] == self._input_buf_image.getRawImage().__int__()
 
-            tmp = np.ascontiguousarray(self._input_buf_array[:, :, :])
-            self._output_buf_array = tmp.astype(np.float32)
-
-            self._port_out.write(self._output_buf_image)
-            # self._port_out.write(input_img)
-
-            frame = self._input_buf_array
-
             #   run detection/segmentation on frame
-            #   display/return results
+            frame = self._input_buf_array
             results = self._model.detect([frame], verbose=1)
 
-            # Visualize results
+            # Visualize and stream results
             r = results[0]
+            if len(r['rois']) > 0:
+                frame_with_detections = tabletop.apply_detection_results(frame, r['masks'], r['rois'], r['class_ids'],
+                                                                         self._dataset.class_names,
+                                                                         self._class_colors,
+                                                                         scores=r['scores'])
 
-            plt.cla()
-            
-            instance_colors = []
-            print('Instances detected: ', r['class_ids'])
-            instance_colors = [self._class_colors[self._class_names[class_id]] for class_id in r['class_ids']]
-            visualize.display_instances(frame, r['rois'], r['masks'], r['class_ids'],
-                                       self._class_names, r['scores'], ax=self._ax, colors=instance_colors)
+                b = yarp.Bottle()
+                for detection_bbox in r['rois']:
+                    y1, x1, y2, x2 = detection_bbox
+                    bb = b.addList()
+                    bb.addInt(int(x1))
+                    bb.addInt(int(y1))
+                    bb.addInt(int(x2))
+                    bb.addInt(int(y2))
 
-            plt.pause(0.01)
+                self._output_buf_array = frame_with_detections.astype(np.uint8)
+                self._port_out.write(self._output_buf_image)
+                self._port_out_bboxes.write(b)
+            else:
+                # If nothing is detected, just pass the video frame through
+                self._output_buf_array = frame.astype(np.uint8)
+                self._port_out.write(self._output_buf_image)
 
         return True
 
@@ -238,7 +237,6 @@ def parse_args():
                         default=640, type=int)
     parser.add_argument('--height', dest='input_img_height', help='Input image height',
                         default=480, type=int)
-
     parser.add_argument(dest='model_weights_path', help='Model weights path relative to the directory PROJECT_ROOT/logs',
 			type=str)
 
@@ -261,7 +259,3 @@ if __name__ == '__main__':
 
     print('Configuration complete')
     detector.runModule(rf)
-
-    plt.ioff()
-    plt.show()
-
