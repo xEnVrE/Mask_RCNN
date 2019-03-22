@@ -124,11 +124,12 @@ class YCBVideoConfigTraining(Config):
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 3
+    IMAGES_PER_GPU = 1
+
 
     # Define number of GPUs to use
-    GPU_COUNT = 4
-    GPU_ID = "0,1,2,3"
+    GPU_COUNT = 1
+    GPU_ID = "0"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
