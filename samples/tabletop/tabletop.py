@@ -116,7 +116,7 @@ class TabletopConfigInference(Config):
     DETECTION_MIN_CONFIDENCE = 0.75
 
 class YCBVideoConfigTraining(Config):
-    """Configuration for training on the YCB_Video dataset for segmentation.
+    """Configuration for  training on the YCB_Video dataset for segmentation.
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
@@ -208,9 +208,8 @@ class YCBVideoDataset(utils.Dataset):
         # Background has id 0, but it is not included in the class list
         class_list = self.parse_class_list(dataset_root)
 
-        for class_id, class_name in  enumerate(class_list):
-            # exclude wood block!
-            if remove_wood_block and (class_name == '036_wood_block'):
+        for class_id, class_name in enumerate(class_list):
+            if remove_wood_block and class_name == '036_wood_block':
                 continue
             self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
 
@@ -258,11 +257,9 @@ class YCBVideoDataset(utils.Dataset):
             instance_ids =  metadata['cls_indexes']
             instance_ids = instance_ids.reshape(instance_ids.size)
 
+            # Remove detection ids related to wood block from detection list
             if remove_wood_block:
-                instance_ids[instance_ids != 16]
-                shift_ids = -1 * (instance_ids > 16)
-                instance_ids = instance_ids.astype(np.int64) + shift_ids
-                instance_ids = instance_ids.astype(np.uint8)
+                instance_ids = instance_ids[instance_ids != 16]
 
             # Add an image to the dataset
             if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
