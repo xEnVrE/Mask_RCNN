@@ -126,7 +126,6 @@ class YCBVideoConfigTraining(Config):
     # During inference, make sure to set this to 1.
     IMAGES_PER_GPU = 1
 
-
     # Define number of GPUs to use
     GPU_COUNT = 1
     GPU_ID = "0"
@@ -148,8 +147,6 @@ class YCBVideoConfigTraining(Config):
 
     # Define stages to be fine tuned
     LAYERS_TUNE = '4+'
-
-    REMOVE_WOOD_BLOCK = True
 
 class YCBVideoConfigInference(Config):
     """Configuration for performing inference with the YCB_Video dataset for segmentation.
@@ -175,13 +172,14 @@ class YCBVideoConfigInference(Config):
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.75
 
-    REMOVE_WOOD_BLOCK = True
-
 ############################################################
 #  Datasets
 ############################################################
 
 class YCBVideoDataset(utils.Dataset):
+
+    # List of classes to remove
+    UNWANTED_CLASS_LIST = {'036_wood_block':16}
 
     def parse_class_list(self, dataset_root):
         """
@@ -196,9 +194,14 @@ class YCBVideoDataset(utils.Dataset):
             classes_list_raw = handle.readlines()
         classes_list = [cl.strip() for cl in classes_list_raw]
 
+        # Remove unwanted classes from class list
+        for unwanted_class in self.UNWANTED_CLASS_LIST.keys():
+            if self.UNWANTED_CLASS_LIST and (unwanted_class in classes_list):
+                classes_list.remove(unwanted_class)
+
         return classes_list
 
-    def load_class_names(self, dataset_root, verbose=True, remove_wood_block=True):
+    def load_class_names(self, dataset_root, verbose=True):
         """
         Loads the class list into the Dataset class, without opening any metadata file
         :param dataset_root (string): root directory of the dataset.
@@ -209,9 +212,7 @@ class YCBVideoDataset(utils.Dataset):
         class_list = self.parse_class_list(dataset_root)
 
         for class_id, class_name in enumerate(class_list):
-            if remove_wood_block and class_name == '036_wood_block':
-                continue
-            self.add_class('ycb_video', class_id = class_id+1, class_name = class_name)
+            self.add_class('ycb_video', class_id=class_id+1, class_name=class_name)
 
         self.class_names = [cl['name'] for cl in self.class_info]
 
@@ -220,7 +221,7 @@ class YCBVideoDataset(utils.Dataset):
             for cl in self.class_info:
                 print("\tID {}:\t{}".format(cl['id'], cl['name']))
 
-    def load_dataset(self, dataset_root, subset, remove_wood_block=True):
+    def load_dataset(self, dataset_root, subset):
         """
         Loads the YCB_Video dataset paths (without opening image files).
         :param dataset_root (string): Root directory of the dataset.
@@ -231,7 +232,7 @@ class YCBVideoDataset(utils.Dataset):
         assert subset in ["train", "val"]
 
         # Add the classes (order is vital for mask id consistency)
-        self.load_class_names(dataset_root, remove_wood_block=remove_wood_block)
+        self.load_class_names(dataset_root)
 
         # Discriminate between train and validation set
         subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
@@ -254,12 +255,14 @@ class YCBVideoDataset(utils.Dataset):
 
             # Load the metadata file for each sample to get the instance IDs for the masks
             metadata = scipy.io.loadmat(metadata_path)
-            instance_ids =  metadata['cls_indexes']
+            instance_ids = metadata['cls_indexes']
             instance_ids = instance_ids.reshape(instance_ids.size)
 
-            # Remove detection ids related to wood block from detection list
-            if remove_wood_block:
-                instance_ids = instance_ids[instance_ids != 16]
+            # Remove detection ids related to unwanted classes from detection list
+            if self.UNWANTED_CLASS_LIST:
+                for unwanted_class_name, unwanted_class_id in self.UNWANTED_CLASS_LIST.items():
+                    instance_ids = instance_ids[instance_ids != unwanted_class_id]
+                    instance_ids = instance_ids - 1 * (instance_ids > unwanted_class_id)
 
             # Add an image to the dataset
             if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
@@ -307,6 +310,18 @@ class YCBVideoDataset(utils.Dataset):
 
         masks = np.zeros((image_info["height"], image_info["width"], no_of_masks),
                             dtype=np.bool)
+
+        # Change mask grayscales according to undesired classes
+        # TODO: fix this for a greater number of unwanted classes!
+        if self.UNWANTED_CLASS_LIST:
+            for unwanted_class, unwanted_id in self.UNWANTED_CLASS_LIST.items():
+                if np.any(class_ids >= unwanted_id):
+                    # Erase any ground truth for unwanted classes
+                    mask_image[mask_image == unwanted_id] = 0
+                    # Take 1 away from every ground truth with id > unwanted_id
+                    mask_fixes = -1*(mask_image>unwanted_id)
+                    mask_image = mask_image.astype(np.int) + mask_fixes
+                    mask_image = mask_image.astype(np.uint)
 
         # create boolean masks for each instance, respecting instance id order
         for idx in range(no_of_masks):
