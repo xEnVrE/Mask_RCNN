@@ -39,6 +39,15 @@ yarp.Network.init()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
+#   Set an upper bound to the GPU memory we can use
+import tensorflow as tf
+from keras import backend as K
+
+config = tf.ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.5
+sess = tf.Session(config=config)
+K.set_session(sess)
+
 class MaskRCNNWrapperModule (yarp.RFModule):
 
     def __init__(self, args):
@@ -120,6 +129,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Inference model setup
         #   Configure some parameters for inference
         config = tabletop.YCBVideoConfigInference()
+        config.POST_NMS_ROIS_INFERENCE        =300
+        config.PRE_NMS_LIMIT                  =1000
+        config.DETECTION_MAX_INSTANCES        =10
+        config.DETECTION_MIN_CONFIDENCE       =0.8
+        
         config.display()
 
         self._model = modellib.MaskRCNN(mode='inference',
@@ -194,7 +208,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
             #   run detection/segmentation on frame
             frame = self._input_buf_array
-            results = self._model.detect([frame], verbose=1)
+            results = self._model.detect([frame], verbose=0)
 
             # Visualize and stream results
             r = results[0]
@@ -208,11 +222,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 for detection_bbox in r['rois']:
                     y1, x1, y2, x2 = detection_bbox
                     bb = b.addList()
-                    bb.addInt(int(x1))
-                    bb.addInt(int(y1))
-                    bb.addInt(int(x2))
-                    bb.addInt(int(y2))
-
+                    bb.addDouble(float(x1))
+                    bb.addDouble(float(y1))
+                    bb.addDouble(float(x2))
+                    bb.addDouble(float(y2))
+                    
                 self._output_buf_array = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
                 self._port_out_bboxes.write(b)
