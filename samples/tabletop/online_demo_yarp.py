@@ -69,6 +69,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_out_bboxes = None
         self._port_out = None
         self._port_in = None
+        self._port_rpc = None
 
         self._module_name = args.module_name
 
@@ -92,12 +93,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Input
         #   Image port initialization
-
         self._port_in = yarp.BufferedPortImageRgb()
         self._port_in.open('/' +  self._module_name + '/RGBimage:i')
 
         #   Input buffer initialization
-
         self._input_buf_image = yarp.ImageRgb()
         self._input_buf_image.resize(self._input_img_width, self._input_img_height)
         self._input_buf_array = np.ones((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
@@ -126,6 +125,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         print('Output image buffer configured')
 
+        #   RPC port initialization
+        self._port_rpc = yarp.RpcServer()
+        self._port_rpc.open('/' + self._module_name + '/rpc')
+        self.attach_rpc_server(self._port_rpc)
+
         #   Inference model setup
         #   Configure some parameters for inference
         config = tabletop.YCBVideoConfigInference()
@@ -139,6 +143,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._model = modellib.MaskRCNN(mode='inference',
                                   model_dir=MODEL_DIR,
                                   config=config)
+
+        self._detection_results = None
 
         print('Inference model configured')
 
@@ -212,6 +218,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
             # Visualize and stream results
             r = results[0]
+            self._detection_results = r
             if len(r['rois']) > 0:
                 frame_with_detections = tabletop.apply_detection_results(frame, r['masks'], r['rois'], r['class_ids'],
                                                                          self._dataset.class_names,
@@ -236,6 +243,76 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 self._port_out.write(self._output_buf_image)
 
         return True
+
+    def get_component_around(self, seed_x, seed_y):
+        '''
+        Return a list of points belonging to a detected object, starting from a seed point
+        :param seed_x (int): seed point x coordinate
+        :param seed_y (int): seed point y coordinate
+        :return (list): list of [x,y] points pertaining to the segmented object. Empty if seed is outside the component
+        '''
+
+        blob_point_list = []
+
+        #   Assert seed point is within image boundaries
+        if not ((seed_x > 0 and seed_x < self._input_img_width) and (seed_y > 0 and seed_y < self._input_img_height)):
+            return blob_point_list
+
+        #   Assert if seed point is contained in any detection mask
+        detection_masks = self._detection_results['masks']
+        if not np.any(detection_masks[seed_y, seed_x, :]):
+            return blob_point_list
+
+        #   Given seed point is contained in a mask, retrieve such mask
+        #   If the seed point is contained in more than one mask, return the first found mask
+        #TODO: THIS IS BRUTAL, MAYBE REWRITE THIS SO YOU DON'T LOOK LIKE A CAVEMAN
+        for mask_idx in range(detection_masks.shape[2]):
+            if detection_masks[seed_y, seed_x, mask_idx]:
+                point_array_row, point_array_col = np.where(detection_masks[:,:,mask_idx])
+                for point_idx in range(point_array_row.shape[0]):
+                    #   The points are enlisted as [x, y] coordinates so row and column order is swapped
+                    blob_point_list.append([point_array_col[point_idx], point_array_row[point_idx]])
+                break
+
+        #   If none is found, return empty list of points
+        return blob_point_list
+
+    def respond(self, command, reply):
+        '''
+        Respond to rpc commands
+        :param command (yarp.Bottle): bottle containing the command (as string)
+        :param reply (yarp.Bottle): bottle containing the response (format depending on command)
+        '''
+
+        #   Declare available commands
+        available_commands = ['get_component_around']
+
+        command_string = command.get(0).toString()
+        reply.clear()
+
+        #pointlist = reply.addList()
+
+        if command_string not in available_commands:
+            print('Command not recognized!')
+            return True
+
+        if command_string == available_commands[0]:
+            #   return binary object around seed pixel
+            seed_x = command.get(1).asInt()
+            seed_y = command.get(2).asInt()
+
+            point_list = self.get_component_around(seed_x, seed_y)
+
+            #   Iterate over all points and add them to the bottle as lists
+            if point_list:
+                for point in point_list:
+                    #p = pointlist.addList()
+                    p = reply.addList()
+                    p.addInt(point[0])
+                    p.addInt(point[1])
+
+        return True
+
 
 def parse_args():
     '''
