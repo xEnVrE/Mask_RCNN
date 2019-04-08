@@ -257,7 +257,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Assert seed point is within image boundaries
         if not ((seed_x > 0 and seed_x < self._input_img_width) and (seed_y > 0 and seed_y < self._input_img_height)):
             return blob_point_list
-
+        
         #   Assert if seed point is contained in any detection mask
         detection_masks = self._detection_results['masks']
         if not np.any(detection_masks[seed_y, seed_x, :]):
@@ -290,7 +290,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         command_string = command.get(0).toString()
         reply.clear()
 
-        #pointlist = reply.addList()
+        pointlist = reply.addList()
 
         if command_string not in available_commands:
             print('Command not recognized!')
@@ -306,10 +306,9 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             #   Iterate over all points and add them to the bottle as lists
             if point_list:
                 for point in point_list:
-                    #p = pointlist.addList()
-                    p = reply.addList()
-                    p.addInt(point[0])
-                    p.addInt(point[1])
+                    p = pointlist.addList()
+                    p.addInt(int(point[0]))
+                    p.addInt(int(point[1]))
 
         return True
 
