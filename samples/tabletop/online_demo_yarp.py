@@ -234,12 +234,12 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     bb.addDouble(float(x2))
                     bb.addDouble(float(y2))
                     
-                self._output_buf_array = frame_with_detections.astype(np.uint8)
+                self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
                 self._port_out_bboxes.write(b)
             else:
                 # If nothing is detected, just pass the video frame through
-                self._output_buf_array = frame.astype(np.uint8)
+                self._output_buf_array[:,:] = frame.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
 
         return True
