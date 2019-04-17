@@ -67,6 +67,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._output_buf_array = None
 
         self._port_out_bboxes = None
+        self._port_out_info = None
         self._port_out = None
         self._port_in = None
         self._port_rpc = None
@@ -109,11 +110,15 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output
         #   Output image port initialization
         self._port_out = yarp.Port()
-        self._port_out.open('/' + self._module_name + '/RGBImage:o')
+        self._port_out.open('/' + self._module_name + '/RGBimage:o')
 
         #   Output blobs port initialization
         self._port_out_bboxes = yarp.Port()
         self._port_out_bboxes.open('/' + self._module_name + '/bboxes:o')
+
+        #   Output detection info port initialization
+        self._port_out_info = yarp.BufferedPortBottle()
+        self._port_out_info.open('/' + self._module_name + '/detectionInfo:o')
 
         #   Output buffer initialization
         self._output_buf_image = yarp.ImageRgb()
@@ -233,10 +238,34 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     bb.addDouble(float(y1))
                     bb.addDouble(float(x2))
                     bb.addDouble(float(y2))
-                    
+
+                #   Send out the processed image
                 self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
+
+                #   Send out the bounding boxes data
                 self._port_out_bboxes.write(b)
+
+                #   Send out the detection info
+                info_bottle = self._port_out_info.prepare()
+                for detection_idx in range(len(r['rois'])):
+                    instance_bottle = info_bottle.addList()
+                    #   Add class name to info
+                    instance_bottle.addString(self._dataset.class_names[r['class_ids'][detection_idx]])
+                    #   Add class ID to info
+                    instance_bottle.addInt(int(r['class_ids'][detection_idx]))
+                    #   Add bounding box
+                    bb = instance_bottle.addList()
+                    y1, x1, y2, x2 = r['rois'][detection_idx]
+                    bb.addInt(int(x1))
+                    bb.addInt(int(y1))
+                    bb.addInt(int(x2))
+                    bb.addInt(int(y2))
+                    #   Add confidence score
+                    instance_bottle.addDouble(float(r['scores'][detection_idx]))
+
+                self._port_out_info.write()
+
             else:
                 # If nothing is detected, just pass the video frame through
                 self._output_buf_array[:,:] = frame.astype(np.uint8)
