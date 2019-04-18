@@ -117,7 +117,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_out_bboxes.open('/' + self._module_name + '/bboxes:o')
 
         #   Output detection info port initialization
-        self._port_out_info = yarp.BufferedPortBottle()
+        self._port_out_info = yarp.Port()
         self._port_out_info.open('/' + self._module_name + '/detectionInfo:o')
 
         #   Output buffer initialization
@@ -189,6 +189,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_in.interrupt()
         self._port_out.interrupt()
         self._port_out_bboxes.interrupt()
+        self._port_out_info.interrupt()
 
         return True
 
@@ -197,6 +198,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_in.close()
         self._port_out.close()
         self._port_out_bboxes.close()
+        self._port_out_info.close()
 
         return True
 
@@ -247,7 +249,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 self._port_out_bboxes.write(b)
 
                 #   Send out the detection info
-                info_bottle = self._port_out_info.prepare()
+                info_bottle = yarp.Bottle()
                 for detection_idx in range(len(r['rois'])):
                     instance_bottle = info_bottle.addList()
                     #   Add class name to info
@@ -264,7 +266,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     #   Add confidence score
                     instance_bottle.addDouble(float(r['scores'][detection_idx]))
 
-                self._port_out_info.write()
+                self._port_out_info.write(info_bottle)
 
             else:
                 # If nothing is detected, just pass the video frame through
