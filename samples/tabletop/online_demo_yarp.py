@@ -74,8 +74,12 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._output_buf_image = None
         self._output_buf_array = None
 
+        self._output_mask_buf_image = None
+        self._output_mask_buf_array = None
+
         self._port_out_bboxes = None
         self._port_out_info = None
+        self._port_out_mask = None
         self._port_out = None
         self._port_in = None
         self._port_rpc = None
@@ -92,6 +96,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._dataset = None
 
         self._class_colors = None
+
+        self._obj_stream = None
 
     def configure (self, rf):
         '''
@@ -137,6 +143,21 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                                            self._output_buf_array.shape[0])
 
         print('Output image buffer configured')
+
+        #   Output mask port initialization
+        self._port_out_mask = yarp.Port()
+        self._port_out_mask.open('/' + self._module_name + '/maskImage:o')
+
+        #   Output mask buffer initialization
+        self._output_mask_buf_image = yarp.ImageMono()
+        self._output_mask_buf_image.resize(self._input_img_width, self._input_img_height)
+        self._output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
+        self._output_mask_buf_image.setExternal(self._output_mask_buf_array,
+                                           self._output_mask_buf_array.shape[1],
+                                           self._output_mask_buf_array.shape[0])
+
+        print('Output mask buffer configured')
+
 
         #   RPC port initialization
         self._port_rpc = yarp.RpcServer()
@@ -198,6 +219,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_out.interrupt()
         self._port_out_bboxes.interrupt()
         self._port_out_info.interrupt()
+        self._port_out_mask.interrupt()
 
         return True
 
@@ -207,6 +229,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_out.close()
         self._port_out_bboxes.close()
         self._port_out_info.close()
+        self._port_out_mask.close()
 
         return True
 
@@ -252,6 +275,17 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 #   Send out the processed image
                 self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
+
+                #   Send the mask related to the asked object
+                if self._obj_stream:
+                    obj_stream_idx = self._dataset.class_names.index(self._obj_stream)
+                    if any(r['class_ids'] == obj_stream_idx):
+                        #   If desired object was detected
+                        obj_stream_mask_id = np.where(r['class_ids'] == obj_stream_idx)[0][0]
+                        self._output_mask_buf_array[:,:] = r['masks'][:,:,obj_stream_mask_id].astype(np.uint8) * 255
+                    else:
+                        self._output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
+                    self._port_out_mask.write(self._output_mask_buf_image)
 
                 #   Send out the bounding boxes data
                 self._port_out_bboxes.write(b)
@@ -324,12 +358,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         '''
 
         #   Declare available commands
-        available_commands = ['get_component_around']
+        available_commands = ['get_component_around',
+                              'set_segmented_object_mask']
 
         command_string = command.get(0).toString()
         reply.clear()
-
-        pointlist = reply.addList()
 
         if command_string not in available_commands:
             print('Command not recognized!')
@@ -340,6 +373,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             seed_x = command.get(1).asInt()
             seed_y = command.get(2).asInt()
 
+            pointlist = reply.addList()
+
             point_list = self.get_component_around(seed_x, seed_y)
 
             #   Iterate over all points and add them to the bottle as lists
@@ -348,6 +383,18 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     p = pointlist.addList()
                     p.addInt(int(point[0]))
                     p.addInt(int(point[1]))
+
+        elif command_string == available_commands[1]:
+            #   set the object whose detection mask to stream
+            obj = command.get(1).toString()
+            if obj in self._dataset.class_names:
+                self._obj_stream = obj
+                reply.addString("ack")
+            elif obj == "None" or obj == 'none':
+                self._obj_stream = None
+            else:
+                reply.addString("nack")
+                print("Object name does not correspond to any label")
 
         return True
 
