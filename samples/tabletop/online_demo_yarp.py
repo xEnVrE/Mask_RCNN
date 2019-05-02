@@ -11,6 +11,7 @@ import os
 import sys
 import argparse
 import numpy as np
+from time import sleep
 
 #   Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -22,22 +23,29 @@ import mrcnn.model as modellib
 #   Import the tabletop dataset custom configuration
 import tabletop
 
-#   Declare directories for weights and logs
-MODEL_DIR = os.path.join(ROOT_DIR, "logs")
-
 #   Import YARP bindings
-YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp/build"
-YARP_BINDINGS_DIR = os.path.join(YARP_BUILD_DIR, "lib/python")
+if 'yarp' not in sys.modules:
+    YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp_py_bindings_3_5"
+    YARP_BINDINGS_DIR = os.path.join(YARP_BUILD_DIR, "lib/python")
 
-if YARP_BINDINGS_DIR not in sys.path:
     sys.path.insert(0, YARP_BINDINGS_DIR)
 
+    print("Path to YARP bindings not in PYTHONPATH env variable. Using script path settings: \n", YARP_BINDINGS_DIR)
+
 import yarp
+#   Initialize yarp
+while not yarp.Network.checkNetwork():
+    print("YARP network is not up. Checking again in 2 seconds.")
+    sleep(2)
+
 yarp.Network.init()
 
 #   Add environment variables depending on the system
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+#   Declare directories for weights and logs
+MODEL_DIR = os.path.join(ROOT_DIR, "logs")
 
 #   Set an upper bound to the GPU memory we can use
 import tensorflow as tf
