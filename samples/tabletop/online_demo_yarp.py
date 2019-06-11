@@ -25,9 +25,7 @@ import tabletop
 
 #   Import YARP bindings
 if 'yarp' not in sys.modules:
-    YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp_py_bindings_3_5"
-    YARP_BINDINGS_DIR = os.path.join(YARP_BUILD_DIR, "lib/python")
-
+    YARP_BINDINGS_DIR = "/home/icub/tmp_fbottarel/yarp_bindings_python3/lib/python"
     sys.path.insert(0, YARP_BINDINGS_DIR)
 
     print("Path to YARP bindings not in PYTHONPATH env variable. Using script path settings: \n", YARP_BINDINGS_DIR)
@@ -151,11 +149,6 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output mask buffer initialization
         self._output_mask_buf_image = yarp.ImageMono()
         self._output_mask_buf_image.resize(self._input_img_width, self._input_img_height)
-        self._output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
-        self._output_mask_buf_image.setExternal(self._output_mask_buf_array,
-                                           self._output_mask_buf_array.shape[1],
-                                           self._output_mask_buf_array.shape[0])
-
         print('Output mask buffer configured')
 
 
@@ -276,15 +269,21 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
 
+                # Default behavior is a blank image
+                output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
+
                 #   Send the mask related to the asked object
                 if self._obj_stream:
                     obj_stream_idx = self._dataset.class_names.index(self._obj_stream)
                     if any(r['class_ids'] == obj_stream_idx):
                         #   If desired object was detected
                         obj_stream_mask_id = np.where(r['class_ids'] == obj_stream_idx)[0][0]
-                        self._output_mask_buf_array[:,:] = r['masks'][:,:,obj_stream_mask_id].astype(np.uint8) * 255
-                    else:
-                        self._output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
+                        output_mask_buf_array[:,:] = r['masks'][:,:,obj_stream_mask_id].astype(np.uint8) * 255
+
+                    self._output_mask_buf_image.setExternal(output_mask_buf_array,
+                                                            output_mask_buf_array.shape[1],
+                                                            output_mask_buf_array.shape[0])
+
                     self._port_out_mask.write(self._output_mask_buf_image)
 
                 #   Send out the bounding boxes data
