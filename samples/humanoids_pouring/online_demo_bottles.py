@@ -21,13 +21,15 @@ sys.path.append(ROOT_DIR)
 import mrcnn.model as modellib
 
 #   Import the tabletop dataset custom configuration
-import tabletop
+import tabletop_bottles
+from samples.tabletop import configurations
+from samples.tabletop import datasets
 
 #   Import YARP bindings
 if 'yarp' not in sys.modules:
-    
-    YARP_BINDINGS_DIR = "/home/icub/tmp_fbottarel/yarp_bindings_python3/lib/python"
+    YARP_BINDINGS_DIR = "/home/icub/tmp_fbottarel/yarp_bindings_python3/lib/python" 
     sys.path.insert(0, YARP_BINDINGS_DIR)
+
     print("Path to YARP bindings not in PYTHONPATH env variable. Using script path settings: \n", YARP_BINDINGS_DIR)
 
 import yarp
@@ -149,6 +151,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output mask buffer initialization
         self._output_mask_buf_image = yarp.ImageMono()
         self._output_mask_buf_image.resize(self._input_img_width, self._input_img_height)
+
         print('Output mask buffer configured')
 
 
@@ -159,7 +162,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Inference model setup
         #   Configure some parameters for inference
-        config = tabletop.YCBVideoConfigInference()
+        config = configurations.YCBVideoConfigInference()
         config.POST_NMS_ROIS_INFERENCE        =300
         config.PRE_NMS_LIMIT                  =1000
         config.DETECTION_MAX_INSTANCES        =10
@@ -176,20 +179,20 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         print('Inference model configured')
 
         #   Load class names
-        dataset_root = os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset")
+        dataset_root = os.path.join(ROOT_DIR, "datasets", "bottles_ycb_video_format")
 
         # Automatically discriminate the dataset according to the config file
-        if isinstance(config, tabletop.TabletopConfigInference):
+        if isinstance(config, configurations.TabletopConfigInference):
             # Load the validation dataset
-            self._dataset = tabletop.TabletopDataset()
-        elif isinstance(config, tabletop.YCBVideoConfigInference):
-            self._dataset = tabletop.YCBVideoDataset()
+            self._dataset = datasets.TabletopDataset()
+        elif isinstance(config, configurations.YCBVideoConfigInference):
+            self._dataset = datasets.YCBVideoDataset()
 
         # No need to load the whole dataset, just the class names will be ok
         self._dataset.load_class_names(dataset_root)
 
         # Create a dict for assigning colors to each class
-        random_class_colors = tabletop.random_colors(len(self._dataset.class_names))
+        random_class_colors = tabletop_bottles.random_colors(len(self._dataset.class_names))
         self._class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, self._dataset.class_names)}
 
         #   Load model weights
@@ -251,7 +254,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             r = results[0]
             self._detection_results = r
             if len(r['rois']) > 0:
-                frame_with_detections = tabletop.apply_detection_results(frame, r['masks'], r['rois'], r['class_ids'],
+                frame_with_detections = tabletop_bottles.apply_detection_results(frame, r['masks'], r['rois'], r['class_ids'],
                                                                          self._dataset.class_names,
                                                                          self._class_colors,
                                                                          scores=r['scores'])
@@ -268,7 +271,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 #   Send out the processed image
                 self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
-
+                
                 # Default behavior is a blank image
                 output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
 
