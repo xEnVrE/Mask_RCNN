@@ -125,11 +125,11 @@ class YCBVideoConfigTraining(Config):
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 1
+    IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
+    GPU_COUNT = 4
+    GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
@@ -138,16 +138,16 @@ class YCBVideoConfigTraining(Config):
     BACKBONE = "resnet50"
 
     # Number of training steps per epoch
-    STEPS_PER_EPOCH = None
+    STEPS_PER_EPOCH = 1000
 
     # Number of epochs
-    EPOCHS = 50
+    #EPOCHS = 50
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
-    LAYERS_TUNE = '4+'
+    #LAYERS_TUNE = '4+'
 
 class YCBVideoConfigInference(Config):
     """Configuration for performing inference with the YCB_Video dataset for segmentation.
@@ -162,7 +162,7 @@ class YCBVideoConfigInference(Config):
 
     # Define number of GPUs to use
     GPU_COUNT = 1
-    GPU_ID = "0"
+    GPU_ID = "1"
 
     # Number of classes (including background)
     NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
@@ -564,30 +564,21 @@ def train(model, config):
     #augmentation = imgaug.augmenters.Fliplr(0.5)
 
     # TRAINING SCHEDULE
-    stages_trained = '3+'
-    print("Training network stages" + stages_trained)
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                layers=stages_trained)
+
     stages_trained = '4+'
     print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/5.0,
-                epochs=20,
+                learning_rate=config.LEARNING_RATE,
+                epochs=40,
                 layers=stages_trained)
+                #augmentation=augmentation)
     stages_trained = 'heads'
     print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/10.0,
-                epochs=10,
-                layers=stages_trained)
-
-
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/10,
+                learning_rate=config.LEARNING_RATE/5.0,
                 epochs=80,
-                layers='all')
+                layers=stages_trained)
+                #augmentation=augmentation)
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
     """
