@@ -38,6 +38,7 @@ import skimage.draw
 import scipy.io
 import cv2
 from keras.utils.generic_utils import Progbar
+#import imgaug
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -560,6 +561,8 @@ def train(model, config):
     if config.STEPS_PER_EPOCH == None:
         config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
 
+    #augmentation = imgaug.augmenters.Fliplr(0.5)
+
     # TRAINING SCHEDULE
     stages_trained = '3+'
     print("Training network stages" + stages_trained)
@@ -675,7 +678,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         fps = vcapture.get(cv2.CAP_PROP_FPS)
 
         # Define codec and create video writer
-        file_name = os.path.basename + "_splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
+        file_name = os.path.basename(video_path) + "_splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
         vwriter = cv2.VideoWriter(file_name,
                                   cv2.VideoWriter_fourcc(*'MJPG'),
                                   fps, (width, height))
