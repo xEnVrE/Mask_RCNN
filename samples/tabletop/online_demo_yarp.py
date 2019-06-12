@@ -11,6 +11,7 @@ import os
 import sys
 import argparse
 import numpy as np
+from time import sleep
 
 #   Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
@@ -22,22 +23,38 @@ import mrcnn.model as modellib
 #   Import the tabletop dataset custom configuration
 import tabletop
 
-#   Declare directories for weights and logs
-MODEL_DIR = os.path.join(ROOT_DIR, "logs")
-
 #   Import YARP bindings
-YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp/build"
-YARP_BINDINGS_DIR = os.path.join(YARP_BUILD_DIR, "lib/python")
+if 'yarp' not in sys.modules:
+    YARP_BUILD_DIR = "/home/fbottarel/robot-code/yarp_py_bindings_3_5"
+    YARP_BINDINGS_DIR = os.path.join(YARP_BUILD_DIR, "lib/python")
 
-if YARP_BINDINGS_DIR not in sys.path:
     sys.path.insert(0, YARP_BINDINGS_DIR)
 
+    print("Path to YARP bindings not in PYTHONPATH env variable. Using script path settings: \n", YARP_BINDINGS_DIR)
+
 import yarp
+#   Initialize yarp
+while not yarp.Network.checkNetwork():
+    print("YARP network is not up. Checking again in 2 seconds.")
+    sleep(2)
+
 yarp.Network.init()
 
 #   Add environment variables depending on the system
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
+#   Declare directories for weights and logs
+MODEL_DIR = os.path.join(ROOT_DIR, "logs")
+
+#   Set an upper bound to the GPU memory we can use
+import tensorflow as tf
+from keras import backend as K
+
+config = tf.ConfigProto()
+config.gpu_options.per_process_gpu_memory_fraction = 0.5
+sess = tf.Session(config=config)
+K.set_session(sess)
 
 class MaskRCNNWrapperModule (yarp.RFModule):
 
@@ -58,8 +75,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._output_buf_array = None
 
         self._port_out_bboxes = None
+        self._port_out_info = None
         self._port_out = None
         self._port_in = None
+        self._port_rpc = None
 
         self._module_name = args.module_name
 
@@ -83,12 +102,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Input
         #   Image port initialization
-
         self._port_in = yarp.BufferedPortImageRgb()
         self._port_in.open('/' +  self._module_name + '/RGBimage:i')
 
         #   Input buffer initialization
-
         self._input_buf_image = yarp.ImageRgb()
         self._input_buf_image.resize(self._input_img_width, self._input_img_height)
         self._input_buf_array = np.ones((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
@@ -101,11 +118,15 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output
         #   Output image port initialization
         self._port_out = yarp.Port()
-        self._port_out.open('/' + self._module_name + '/RGBImage:o')
+        self._port_out.open('/' + self._module_name + '/RGBimage:o')
 
         #   Output blobs port initialization
         self._port_out_bboxes = yarp.Port()
         self._port_out_bboxes.open('/' + self._module_name + '/bboxes:o')
+
+        #   Output detection info port initialization
+        self._port_out_info = yarp.Port()
+        self._port_out_info.open('/' + self._module_name + '/detectionInfo:o')
 
         #   Output buffer initialization
         self._output_buf_image = yarp.ImageRgb()
@@ -117,14 +138,26 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         print('Output image buffer configured')
 
+        #   RPC port initialization
+        self._port_rpc = yarp.RpcServer()
+        self._port_rpc.open('/' + self._module_name + '/rpc')
+        self.attach_rpc_server(self._port_rpc)
+
         #   Inference model setup
         #   Configure some parameters for inference
         config = tabletop.YCBVideoConfigInference()
+        config.POST_NMS_ROIS_INFERENCE        =300
+        config.PRE_NMS_LIMIT                  =1000
+        config.DETECTION_MAX_INSTANCES        =10
+        config.DETECTION_MIN_CONFIDENCE       =0.8
+        
         config.display()
 
         self._model = modellib.MaskRCNN(mode='inference',
                                   model_dir=MODEL_DIR,
                                   config=config)
+
+        self._detection_results = None
 
         print('Inference model configured')
 
@@ -164,6 +197,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_in.interrupt()
         self._port_out.interrupt()
         self._port_out_bboxes.interrupt()
+        self._port_out_info.interrupt()
 
         return True
 
@@ -172,6 +206,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_in.close()
         self._port_out.close()
         self._port_out_bboxes.close()
+        self._port_out_info.close()
 
         return True
 
@@ -194,10 +229,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
             #   run detection/segmentation on frame
             frame = self._input_buf_array
-            results = self._model.detect([frame], verbose=1)
+            results = self._model.detect([frame], verbose=0)
 
             # Visualize and stream results
             r = results[0]
+            self._detection_results = r
             if len(r['rois']) > 0:
                 frame_with_detections = tabletop.apply_detection_results(frame, r['masks'], r['rois'], r['class_ids'],
                                                                          self._dataset.class_names,
@@ -208,20 +244,113 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                 for detection_bbox in r['rois']:
                     y1, x1, y2, x2 = detection_bbox
                     bb = b.addList()
+                    bb.addDouble(float(x1))
+                    bb.addDouble(float(y1))
+                    bb.addDouble(float(x2))
+                    bb.addDouble(float(y2))
+
+                #   Send out the processed image
+                self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
+                self._port_out.write(self._output_buf_image)
+
+                #   Send out the bounding boxes data
+                self._port_out_bboxes.write(b)
+
+                #   Send out the detection info
+                info_bottle = yarp.Bottle()
+                for detection_idx in range(len(r['rois'])):
+                    instance_bottle = info_bottle.addList()
+                    #   Add class name to info
+                    instance_bottle.addString(self._dataset.class_names[r['class_ids'][detection_idx]])
+                    #   Add class ID to info
+                    instance_bottle.addInt(int(r['class_ids'][detection_idx]))
+                    #   Add bounding box
+                    bb = instance_bottle.addList()
+                    y1, x1, y2, x2 = r['rois'][detection_idx]
                     bb.addInt(int(x1))
                     bb.addInt(int(y1))
                     bb.addInt(int(x2))
                     bb.addInt(int(y2))
+                    #   Add confidence score
+                    instance_bottle.addDouble(float(r['scores'][detection_idx]))
 
-                self._output_buf_array = frame_with_detections.astype(np.uint8)
-                self._port_out.write(self._output_buf_image)
-                self._port_out_bboxes.write(b)
+                self._port_out_info.write(info_bottle)
+
             else:
                 # If nothing is detected, just pass the video frame through
-                self._output_buf_array = frame.astype(np.uint8)
+                self._output_buf_array[:,:] = frame.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
 
         return True
+
+    def get_component_around(self, seed_x, seed_y):
+        '''
+        Return a list of points belonging to a detected object, starting from a seed point
+        :param seed_x (int): seed point x coordinate
+        :param seed_y (int): seed point y coordinate
+        :return (list): list of [x,y] points pertaining to the segmented object. Empty if seed is outside the component
+        '''
+
+        blob_point_list = []
+
+        #   Assert seed point is within image boundaries
+        if not ((seed_x > 0 and seed_x < self._input_img_width) and (seed_y > 0 and seed_y < self._input_img_height)):
+            return blob_point_list
+        
+        #   Assert if seed point is contained in any detection mask
+        detection_masks = self._detection_results['masks']
+        if not np.any(detection_masks[seed_y, seed_x, :]):
+            return blob_point_list
+
+        #   Given seed point is contained in a mask, retrieve such mask
+        #   If the seed point is contained in more than one mask, return the first found mask
+        #TODO: THIS IS BRUTAL, MAYBE REWRITE THIS SO YOU DON'T LOOK LIKE A CAVEMAN
+        for mask_idx in range(detection_masks.shape[2]):
+            if detection_masks[seed_y, seed_x, mask_idx]:
+                point_array_row, point_array_col = np.where(detection_masks[:,:,mask_idx])
+                for point_idx in range(point_array_row.shape[0]):
+                    #   The points are enlisted as [x, y] coordinates so row and column order is swapped
+                    blob_point_list.append([point_array_col[point_idx], point_array_row[point_idx]])
+                break
+
+        #   If none is found, return empty list of points
+        return blob_point_list
+
+    def respond(self, command, reply):
+        '''
+        Respond to rpc commands
+        :param command (yarp.Bottle): bottle containing the command (as string)
+        :param reply (yarp.Bottle): bottle containing the response (format depending on command)
+        '''
+
+        #   Declare available commands
+        available_commands = ['get_component_around']
+
+        command_string = command.get(0).toString()
+        reply.clear()
+
+        pointlist = reply.addList()
+
+        if command_string not in available_commands:
+            print('Command not recognized!')
+            return True
+
+        if command_string == available_commands[0]:
+            #   return binary object around seed pixel
+            seed_x = command.get(1).asInt()
+            seed_y = command.get(2).asInt()
+
+            point_list = self.get_component_around(seed_x, seed_y)
+
+            #   Iterate over all points and add them to the bottle as lists
+            if point_list:
+                for point in point_list:
+                    p = pointlist.addList()
+                    p.addInt(int(point[0]))
+                    p.addInt(int(point[1]))
+
+        return True
+
 
 def parse_args():
     '''
