@@ -38,10 +38,10 @@ import numpy as np
 # import scipy.io
 import cv2
 from keras.utils.generic_utils import Progbar
-#import imgaug
+import imgaug
 
-from samples.tabletop import configurations
-from samples.tabletop import datasets
+from samples.humanoids_pouring import configurations
+from samples.humanoids_pouring import datasets
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
