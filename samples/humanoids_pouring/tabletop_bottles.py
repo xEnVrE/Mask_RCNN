@@ -31,23 +31,21 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
 
 import os
 import sys
-# import json
 import datetime
 import numpy as np
-# import skimage.draw
-# import scipy.io
 import cv2
 from keras.utils.generic_utils import Progbar
 import imgaug
 
+# Root directory of the project
+ROOT_DIR = os.path.abspath("../../")
+sys.path.append(ROOT_DIR)  # To find local version of the library
+
+# Import config and dataset files
 from samples.humanoids_pouring import configurations
 from samples.humanoids_pouring import datasets
 
-# Root directory of the project
-ROOT_DIR = os.path.abspath("../../")
-
 # Import Mask RCNN
-sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import model as modellib, utils
 
 # Path to trained weights file
