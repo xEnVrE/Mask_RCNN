@@ -103,7 +103,7 @@ class YCBVideoConfigInference(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "ycb_video_inference"
+    NAME = "bottles"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
