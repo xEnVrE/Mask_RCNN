@@ -84,10 +84,17 @@ def train(model, config):
     if config.STEPS_PER_EPOCH == None:
         config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
 
-    augmentation = imgaug.augmenters.Affine(
-        rotate=(-90,90),
-        scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}
-    )
+    augmentation = imgaug.augmenters.Sequential([
+        imgaug.augmenters.Fliplr(0.5),                          # Horizontal flips
+        imgaug.augmenters.Sometimes(0.5,
+            imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
+        ),
+        imgaug.augmenters.Affine(
+            rotate=(-90,90),                                    # Apply rotation
+            scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}            # Scale change
+        ),
+        imgaug.augmenters.ContrastNormalization((0.8, 1.2))    # Change image contrast
+    ])
 
     # TRAINING SCHEDULE
 
