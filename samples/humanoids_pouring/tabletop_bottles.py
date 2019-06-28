@@ -431,11 +431,14 @@ if __name__ == '__main__':
     else:
         weights_path = args.weights
 
+
+
     # Load weights
     print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
+    if args.command == "train":
         # Exclude the last layers because they require a matching
         # number of classes
+        #POSSIBLE BUG: WATCH OUT WHEN RESTARTING A TRAINING SESSION THAT WAS INTERRUPTED!!!!
         model.load_weights(weights_path, by_name=True, exclude=[
             "mrcnn_class_logits", "mrcnn_bbox_fc",
             "mrcnn_bbox", "mrcnn_mask"])
