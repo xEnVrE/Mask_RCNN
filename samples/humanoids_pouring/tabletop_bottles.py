@@ -181,9 +181,9 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
     # Image or video?
     if image_path:
         # Run model detection and generate the color splash effect
-        print("Running on {}".format(args.image))
+        print("Running on {}".format(image_path))
         # Read image
-        image = cv2.imread(args.image)
+        image = cv2.imread(image_path)
         # OpenCV returns images as BGR, convert to RGB
         image = image[..., ::-1]
         # Detect objects
@@ -193,7 +193,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         # Back to BGR for OPENCV
         splash = splash[..., ::-1]
         # Save output
-        file_name = os.path.basename(image_path) + "_splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
+        file_name = image_path + "_splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
         cv2.imwrite(file_name, splash)
     elif video_path:
         # Video capture
@@ -440,9 +440,7 @@ if __name__ == '__main__':
             "mrcnn_class_logits", "mrcnn_bbox_fc",
             "mrcnn_bbox", "mrcnn_mask"])
     else:
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
+        model.load_weights(weights_path, by_name=True)
 
     # Train or evaluate
     if args.command == "train":
