@@ -70,18 +70,20 @@ class YCBVideoConfigTraining(Config):
     """
     # Give the configuration a recognizable name
     NAME = "bottles"
-
+    #NAME = "YCB_Video
+    
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
     IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
+    GPU_COUNT = 4
+    GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 10  # Background + 20 YCB objects (no wood block!)
-
+    NUM_CLASSES = 1 + 2  
+    #NUM_CLASSES = 1 + 20 # Background + 20 YCB objects (no wood block!)
+    
     # Specify the backbone network
     BACKBONE = "resnet50"
 
@@ -104,6 +106,7 @@ class YCBVideoConfigInference(Config):
     """
     # Give the configuration a recognizable name
     NAME = "bottles"
+    #NAME = "YCB_Video
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
@@ -114,11 +117,12 @@ class YCBVideoConfigInference(Config):
     GPU_ID = "0"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 10  # Background + 20 YCB objects (no wood block!)
+    NUM_CLASSES = 1 + 2  # Background + 20 YCB objects (no wood block!)
+    #NUM_CLASSES = 1 + 20 # Background + 20 YCB objects (no wood block!)
 
     # Specify the backbone network
     BACKBONE = "resnet50"
 
     # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.75
+    DETECTION_MIN_CONFIDENCE = 0.5
 

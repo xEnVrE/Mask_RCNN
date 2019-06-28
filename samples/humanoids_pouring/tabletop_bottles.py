@@ -90,7 +90,7 @@ def train(model, config):
             imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
         ),
         imgaug.augmenters.Affine(
-            rotate=(-90,90),                                    # Apply rotation
+            rotate=(-150,150),                                    # Apply rotation
             scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}            # Scale change
         ),
         imgaug.augmenters.ContrastNormalization((0.8, 1.2))    # Change image contrast
@@ -98,11 +98,19 @@ def train(model, config):
 
     # TRAINING SCHEDULE
 
-    stages_trained = 'heads'
+    stages_trained = '5+'
     print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=50,
+                epochs=20,
+                layers=stages_trained,
+                augmentation=augmentation)
+
+    stages_trained = 'heads'
+    print("Training network stages" + stages_trained)
+    model.train(dataset_train, dataset_val,
+                learning_rate=config.LEARNING_RATE/5.0,
+                epochs=40,
                 layers=stages_trained,
                 augmentation=augmentation)
 
