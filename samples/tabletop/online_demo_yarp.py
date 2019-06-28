@@ -265,6 +265,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     bb.addDouble(float(x2))
                     bb.addDouble(float(y2))
 
+
                 #   Send out the processed image
                 self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
                 self._port_out.write(self._output_buf_image)
