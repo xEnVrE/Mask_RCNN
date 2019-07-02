@@ -10,7 +10,7 @@ class TabletopConfigTraining(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "synth_tabletop_training"
+    NAME = "synth_humanoids_training"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
@@ -21,7 +21,7 @@ class TabletopConfigTraining(Config):
     GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 21  # Background + random YCB objects
+    NUM_CLASSES = 1 + 5  # Background + random YCB objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
@@ -30,13 +30,13 @@ class TabletopConfigTraining(Config):
     STEPS_PER_EPOCH = None
 
     # Number of epochs
-    EPOCHS = 100
+    #EPOCHS = 100
 
     # Skip detections with < some confidence level
     DETECTION_MIN_CONFIDENCE = 0.9
 
     # Define stages to be fine tuned
-    LAYERS_TUNE = '4+'
+    LAYERS_TUNE = 'heads'
 
 
 class TabletopConfigInference(Config):
@@ -44,7 +44,7 @@ class TabletopConfigInference(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "synth_tabletop_inference"
+    NAME = "synth_humanoids_inference"
 
     # P100s can hold up to 4 images using ResNet50.
     # During inference, make sure to set this to 1.
@@ -55,7 +55,7 @@ class TabletopConfigInference(Config):
     GPU_ID = "0"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 21 # Background + random YCB objects
+    NUM_CLASSES = 1 + 5 # Background + random YCB objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
