@@ -31,20 +31,21 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
 
 import os
 import sys
-import json
 import datetime
 import numpy as np
-import skimage.draw
-import scipy.io
 import cv2
 from keras.utils.generic_utils import Progbar
+import imgaug
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath("../../")
+sys.path.append(ROOT_DIR)  # To find local version of the library
+
+# Import config and dataset files
+from samples.tabletop import configurations
+from samples.tabletop import datasets
 
 # Import Mask RCNN
-sys.path.append(ROOT_DIR)  # To find local version of the library
-from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 
 # Path to trained weights file
@@ -54,483 +55,6 @@ COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
 # through the command line argument --logs
 DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 
-############################################################
-#  Configurations
-############################################################
-
-class TabletopConfigTraining(Config):
-    """Configuration for training on the synthetic tabletop dataset.
-    Derives from the base Config class and overrides some values.
-    """
-    # Give the configuration a recognizable name
-    NAME = "synth_tabletop_training"
-
-    # P100s can hold up to 4 images using ResNet50.
-    # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 4
-
-    # Define number of GPUs to use
-    GPU_COUNT = 4
-    GPU_ID = "0,1,2,3"
-
-    # Number of classes (including background)
-    NUM_CLASSES = 1 + 21  # Background + random YCB objects
-
-    # Specify the backbone network
-    BACKBONE = "resnet50"
-
-    # Number of training steps per epoch
-    STEPS_PER_EPOCH = None
-
-    # Number of epochs
-    EPOCHS = 100
-
-    # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.9
-
-    # Define stages to be fine tuned
-    LAYERS_TUNE = '4+'
-
-class TabletopConfigInference(Config):
-    """Configuration for training on the synthetic tabletop dataset.
-    Derives from the base Config class and overrides some values.
-    """
-    # Give the configuration a recognizable name
-    NAME = "synth_tabletop_inference"
-
-    # P100s can hold up to 4 images using ResNet50.
-    # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 1
-
-    # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
-
-    # Number of classes (including background)
-    NUM_CLASSES = 1 + 21 # Background + random YCB objects
-
-    # Specify the backbone network
-    BACKBONE = "resnet50"
-
-    # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.75
-
-class YCBVideoConfigTraining(Config):
-    """Configuration for  training on the YCB_Video dataset for segmentation.
-    Derives from the base Config class and overrides some values.
-    """
-    # Give the configuration a recognizable name
-    NAME = "ycb_video_training"
-
-    # P100s can hold up to 4 images using ResNet50.
-    # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 1
-
-    # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
-
-    # Number of classes (including background)
-    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
-
-    # Specify the backbone network
-    BACKBONE = "resnet50"
-
-    # Number of training steps per epoch
-    STEPS_PER_EPOCH = None
-
-    # Number of epochs
-    EPOCHS = 50
-
-    # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.9
-
-    # Define stages to be fine tuned
-    LAYERS_TUNE = '4+'
-
-class YCBVideoConfigInference(Config):
-    """Configuration for performing inference with the YCB_Video dataset for segmentation.
-    Derives from the base Config class and overrides some values.
-    """
-    # Give the configuration a recognizable name
-    NAME = "ycb_video_inference"
-
-    # P100s can hold up to 4 images using ResNet50.
-    # During inference, make sure to set this to 1.
-    IMAGES_PER_GPU = 1
-
-    # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
-
-    # Number of classes (including background)
-    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
-
-    # Specify the backbone network
-    BACKBONE = "resnet50"
-
-    # Skip detections with < some confidence level
-    DETECTION_MIN_CONFIDENCE = 0.75
-
-############################################################
-#  Datasets
-############################################################
-
-class YCBVideoDataset(utils.Dataset):
-
-    # List of classes to remove
-    UNWANTED_CLASS_LIST = {'036_wood_block':16}
-
-    def parse_class_list(self, dataset_root):
-        """
-        Parses the class list from the classes.txt file of the dataset.
-        Does not include background as a class
-        :param dataset_root (string): root directory of the dataset.
-        :return: class_list (list): ordered list of classes
-        """
-        # Classes file is dataset_root/image_sets/classes.txt
-        classes_filename = os.path.join(dataset_root, "image_sets", "classes.txt")
-        with open(classes_filename) as handle:
-            classes_list_raw = handle.readlines()
-        classes_list = [cl.strip() for cl in classes_list_raw]
-
-        # Remove unwanted classes from class list
-        for unwanted_class in self.UNWANTED_CLASS_LIST.keys():
-            if self.UNWANTED_CLASS_LIST and (unwanted_class in classes_list):
-                classes_list.remove(unwanted_class)
-
-        return classes_list
-
-    def load_class_names(self, dataset_root, verbose=True):
-        """
-        Loads the class list into the Dataset class, without opening any metadata file
-        :param dataset_root (string): root directory of the dataset.
-        """
-
-        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
-        # Background has id 0, but it is not included in the class list
-        class_list = self.parse_class_list(dataset_root)
-
-        for class_id, class_name in enumerate(class_list):
-            self.add_class('ycb_video', class_id=class_id+1, class_name=class_name)
-
-        self.class_names = [cl['name'] for cl in self.class_info]
-
-        if verbose:
-            print("Classes loaded: ", len(self.class_names))
-            for cl in self.class_info:
-                print("\tID {}:\t{}".format(cl['id'], cl['name']))
-
-    def load_dataset(self, dataset_root, subset):
-        """
-        Loads the YCB_Video dataset paths (without opening image files).
-        :param dataset_root (string): Root directory of the dataset.
-        :param subset (string): Train or validation dataset.
-        """
-
-        # Training or validation dataset
-        assert subset in ["train", "val"]
-
-        # Add the classes (order is vital for mask id consistency)
-        self.load_class_names(dataset_root)
-
-        # Discriminate between train and validation set
-        subset_file = os.path.join(dataset_root, 'image_sets', 'train.txt') if subset == 'train' else os.path.join(dataset_root, 'image_sets', 'val.txt')
-
-        # Iterate over every data element to add images and masks
-        with open(subset_file, 'r') as handle:
-            frame_file_list_raw = handle.readlines()
-        frame_file_list = [fr.strip() for fr in frame_file_list_raw]
-
-        data_dir = os.path.join(dataset_root, 'data/')
-
-        progress_step = max(round(len(frame_file_list)/1000), 1)
-        progbar = Progbar(target = len(frame_file_list))
-        print("Loading ", subset, "dataset...")
-
-        for progress_idx, frame in enumerate(frame_file_list):
-            rgb_image_path = data_dir + frame + '-color.png'
-            mask_path = data_dir + frame + '-label.png'
-            metadata_path = data_dir + frame + '-meta.mat'
-
-            # Load the metadata file for each sample to get the instance IDs for the masks
-            metadata = scipy.io.loadmat(metadata_path)
-            instance_ids = metadata['cls_indexes']
-            instance_ids = instance_ids.reshape(instance_ids.size)
-
-            # Remove detection ids related to unwanted classes from detection list
-            if self.UNWANTED_CLASS_LIST:
-                for unwanted_class_name, unwanted_class_id in self.UNWANTED_CLASS_LIST.items():
-                    instance_ids = instance_ids[instance_ids != unwanted_class_id]
-                    instance_ids = instance_ids - 1 * (instance_ids > unwanted_class_id)
-
-            # Add an image to the dataset
-            if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
-                self.add_image(
-                    "ycb_video",
-                    image_id = frame,
-                    path = rgb_image_path,
-                    width = 640, height = 480,
-                    mask_path = mask_path,
-                    mask_ids = instance_ids
-                )
-
-            # Keep track of progress
-            if progress_idx%progress_step == 0 or progress_idx == len(frame_file_list):
-                progbar.update(progress_idx+1)
-
-        print("\nDataset loaded: ", len(self.image_info), "images found.")
-
-    def load_mask(self, image_id):
-        """Generate instance mask array for an image id
-        :param
-            image_id (string): id of the image, according to self.image_info list
-        :return:
-            masks (ndarray): A bool array of shape [height, width, instance count] with
-                    one mask per instance.
-            class_ids (ndarray): A 1D array of class IDs of the instance masks.
-        """
-
-        # If not a YCB_Video dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "ycb_video":
-            return super(self.__class__, self).load_mask(image_id)
-
-        # Instance ids have already been loaded
-        # This dataset is easier because there can only be one instance of each object.
-        # Therefore, grayscale mask ids are directly related to the class
-        class_ids = image_info['mask_ids']
-
-        # Load image mask
-        mask_image = skimage.io.imread(image_info["mask_path"])
-
-        # Create empty tensor
-        no_of_masks = class_ids.size
-        assert no_of_masks > 0
-
-        masks = np.zeros((image_info["height"], image_info["width"], no_of_masks),
-                            dtype=np.bool)
-
-        # Change mask grayscales according to undesired classes
-        # TODO: fix this for a greater number of unwanted classes!
-        if self.UNWANTED_CLASS_LIST:
-            for unwanted_class, unwanted_id in self.UNWANTED_CLASS_LIST.items():
-                if np.any(class_ids >= unwanted_id):
-                    # Erase any ground truth for unwanted classes
-                    mask_image[mask_image == unwanted_id] = 0
-                    # Take 1 away from every ground truth with id > unwanted_id
-                    mask_fixes = -1*(mask_image>unwanted_id)
-                    mask_image = mask_image.astype(np.int) + mask_fixes
-                    mask_image = mask_image.astype(np.uint)
-
-        # create boolean masks for each instance, respecting instance id order
-        for idx in range(no_of_masks):
-            masks[:, :, idx] = mask_image == class_ids[idx]
-
-        return masks, class_ids
-
-    def get_class_id(self, image_text_label):
-        """Return class id according to the image textual label
-        Returns:
-            class_id: int of the class id according to self.class_info. -1
-                if class not found
-        """
-        for this_class in self.class_info:
-            if this_class["name"] != image_text_label:
-                continue
-            else:
-                return this_class["id"]
-
-        return -1
-
-    def image_reference(self, image_id):
-        """Return the path of the image."""
-        info = self.image_info[image_id]
-        if info["source"] == "ycb_video":
-            return info["path"]
-        else:
-            super(self.__class__, self).image_reference(image_id)
-
-class TabletopDataset(utils.Dataset):
-
-    def parse_class_list(self, dataset_root):
-        """
-        Parses the class list from the meta file of the dataset.
-        Does not include background as a class
-        :param dataset_root (string): root directory of the dataset
-        :return: class_list (list): ordered list of classes
-        """
-        # Very inefficient, needs to open the whole json file!
-        # Load classes from the json file
-        for subset in ['test', 'val', 'train']:
-            DATASET_JSON_FILENAME = os.path.join(dataset_root, subset, 'dataset.json')
-            if os.path.isfile(DATASET_JSON_FILENAME):
-                break
-        # Assertion error if there is no json file for the dataset
-        assert os.path.isfile(DATASET_JSON_FILENAME)
-
-        # Open the metadata file
-        with (open(DATASET_JSON_FILENAME, 'r')) as handle:
-            dataset_dict = json.loads(json.load(handle))
-
-        # Add classes (except __background__, that is added by default)
-        # We need to make sure that the classes are added according to the order of their IDs in the dataset
-        # Or the names will be screwed up
-        class_entries_sorted_by_id = sorted(dataset_dict['Classes'].items(), key=lambda kv: kv[1])
-
-        class_list = [cls[0] for cls in class_entries_sorted_by_id]
-
-        return class_list
-
-    def load_class_names(self, dataset_root, verbose=True):
-        """
-        Loads the class list into the Dataset class, without opening any metadata file
-        :param class_list (list): list of class names (order defines the id)
-        """
-
-        # In this dataset, the class id is the 1-based index of the corresponding line in the classes file
-        # Background has id 0, but it is not included in the class list
-        class_list = self.parse_class_list(dataset_root)
-
-        for class_id, class_name in enumerate(class_list):
-            if class_name == '__background__':
-                continue
-            self.add_class('tabletop', class_id = class_id, class_name = class_name)
-
-        self.class_names = [cl['name'] for cl in self.class_info]
-        if verbose:
-            print("Classes loaded: ", len(self.class_names))
-            for cl in self.class_info:
-                print("\tID {}:\t{}".format(cl['id'], cl['name']))
-
-    def load_dataset(self, dataset_root, subset):
-        """
-        Load the tabletop dataset.
-        :param dataset_root (string): Root directory of the dataset.
-        :param subset (string): Train or validation dataset
-        """
-
-        # Training or validation
-        assert subset in ["train", "val"]
-        subset_dir = os.path.join(dataset_root, subset)
-
-        # Load dataset metadata
-        DATASET_JSON_FILENAME = os.path.join(subset_dir, "dataset.json")
-        assert os.path.isfile(DATASET_JSON_FILENAME)
-
-        with (open(DATASET_JSON_FILENAME, 'r')) as handle:
-            dataset_dict = json.loads(json.load(handle))
-
-        self.load_class_names(dataset_root)
-
-        # fix the maskID field
-        for path, info in dataset_dict['Images'].items():
-            fixed_mask_id = {}
-            for key, value in info['MaskID'].items():
-                fixed_mask_id[int(key)] = value
-            dataset_dict['Images'][path]['MaskID'] = fixed_mask_id
-
-        # The dataset dictionary is organized as follows:
-        # {
-        #   "Classes": {
-        #       "__background__" : 0
-        #       "class_name" : 1
-        #       ...
-        #   }
-        #   "Images": {
-        #       "image_1_filename": {
-        #           "Annotations":"path_to_annotation_1.xml"
-        #           "MaskPath":"path_to_mask_1.png"
-        #           "MaskID":{
-        #               id_0:"class_name"
-        #               ...
-        #           }
-        #       ...
-        #   }
-        #
-        # Annotations = bounding boxes of object instances in the image
-        # MaskID = correspondences between mask colors and class label
-
-        progress_step = max(round(len(dataset_dict['Images'].keys()) / 1000), 1)
-        progbar = Progbar(target=len(dataset_dict['Images'].keys()))
-
-        print("Loading ", subset, "dataset...")
-
-        # Iterate over images in the dataset to add them
-        for progress_idx, (path, info) in enumerate(dataset_dict['Images'].items()):
-            image_path = os.path.join(subset_dir, path)
-            image = skimage.io.imread(image_path)
-            height, width = image.shape[:2]
-
-            self.add_image(
-                "tabletop",
-                image_id = image_path,
-                path = image_path,
-                width = width, height = height,
-                mask_path = os.path.join(subset_dir, info['MaskPath']),
-                mask_ids = info['MaskID'])
-
-            # Keep track of progress
-            if progress_idx%progress_step == 0 or progress_idx == len(dataset_dict['Images'].keys()):
-                progbar.update(progress_idx+1)
-
-    def get_class_id(self, image_text_label):
-        """Return class id according to the image textual label
-        Returns:
-            class_id: int of the class id according to self.class_info. -1
-                if class not found
-        """
-        for this_class in self.class_info:
-            if this_class["name"] != image_text_label:
-                continue
-            else:
-                return this_class["id"]
-
-        return -1
-
-    def load_mask(self, image_id):
-        """Generate instance masks for an image.
-        Returns:
-            masks: A bool array of shape [height, width, instance count] with
-                    one mask per instance.
-            class_ids: a 1D array of class IDs of the instance masks.
-        """
-        # If not a tabletop dataset image, delegate to parent class.
-        image_info = self.image_info[image_id]
-        if image_info["source"] != "tabletop":
-            return super(self.__class__, self).load_mask(image_id)
-
-        mask_image = skimage.io.imread(image_info["mask_path"])
-        mask_classes = image_info["mask_ids"]
-
-        # Create empty return values
-        masks = np.zeros( (image_info["height"], image_info["width"], len(mask_classes.keys())),
-                            dtype=np.bool)
-        class_ids = np.zeros(len(mask_classes.keys()), dtype=np.int32)
-
-        # The dataset already contains binary maps, we just need to extract
-        # them from the .png mask according to their ID
-        # The ID in the mask file is different for each instance, therefore
-        # we need to refer to the text label and find out the ID in
-        # self.class_info
-        current_inst = 0
-        for instance_id, instance_class_label in mask_classes.items():
-            this_instance_id = self.get_class_id(instance_class_label)
-            # enforce ids to be positive!
-            assert this_instance_id > 0
-            masks[:, :, current_inst] = mask_image == instance_id
-            class_ids[current_inst] = this_instance_id
-            current_inst += 1
-
-        return masks, class_ids
-
-    def image_reference(self, image_id):
-        """Return the path of the image."""
-        info = self.image_info[image_id]
-        if info["source"] == "tabletop":
-            return info["path"]
-        else:
-            super(self.__class__, self).image_reference(image_id)
 
 ############################################################
 #  Utils
@@ -540,14 +64,14 @@ def train(model, config):
     """Train the model."""
 
     # Automatically discriminate the dataset according to the config file
-    if isinstance(config, TabletopConfigTraining):
+    if isinstance(config, configurations.TabletopConfigTraining):
         # Load the training dataset
-        dataset_train = TabletopDataset()
+        dataset_train = datasets.TabletopDataset()
         # Load the validation dataset
-        dataset_val = TabletopDataset()
-    elif isinstance(config, YCBVideoConfigTraining):
-        dataset_train = YCBVideoDataset()
-        dataset_val = YCBVideoDataset()
+        dataset_val = datasets.TabletopDataset()
+    elif isinstance(config, configurations.YCBVideoConfigTraining):
+        dataset_train = datasets.YCBVideoDataset()
+        dataset_val = datasets.YCBVideoDataset()
 
     dataset_train.load_dataset(args.dataset, "train")
     dataset_train.prepare()
@@ -560,31 +84,35 @@ def train(model, config):
     if config.STEPS_PER_EPOCH == None:
         config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
 
+    augmentation = imgaug.augmenters.Sequential([
+        imgaug.augmenters.Fliplr(0.5),                          # Horizontal flips
+        imgaug.augmenters.Sometimes(0.5,
+            imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
+        ),
+        imgaug.augmenters.Affine(
+            rotate=(-150,150),                                    # Apply rotation
+            scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}            # Scale change
+        ),
+        imgaug.augmenters.ContrastNormalization((0.8, 1.2))    # Change image contrast
+    ])
+
     # TRAINING SCHEDULE
-    stages_trained = '3+'
+
+    stages_trained = '5+'
     print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
                 learning_rate=config.LEARNING_RATE,
-                epochs=30,
-                layers=stages_trained)
-    stages_trained = '4+'
-    print("Training network stages" + stages_trained)
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/5.0,
                 epochs=20,
-                layers=stages_trained)
+                layers=stages_trained,
+                augmentation=augmentation)
+
     stages_trained = 'heads'
     print("Training network stages" + stages_trained)
     model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/10.0,
-                epochs=10,
-                layers=stages_trained)
-
-
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/10,
-                epochs=80,
-                layers='all')
+                learning_rate=config.LEARNING_RATE/5.0,
+                epochs=40,
+                layers=stages_trained,
+                augmentation=augmentation)
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
     """
@@ -653,9 +181,9 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
     # Image or video?
     if image_path:
         # Run model detection and generate the color splash effect
-        print("Running on {}".format(args.image))
+        print("Running on {}".format(image_path))
         # Read image
-        image = cv2.imread(args.image)
+        image = cv2.imread(image_path)
         # OpenCV returns images as BGR, convert to RGB
         image = image[..., ::-1]
         # Detect objects
@@ -665,7 +193,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         # Back to BGR for OPENCV
         splash = splash[..., ::-1]
         # Save output
-        file_name = os.path.basename(image_path) + "_splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
+        file_name = image_path + "_splash_{:%Y%m%dT%H%M%S}.png".format(datetime.datetime.now())
         cv2.imwrite(file_name, splash)
     elif video_path:
         # Video capture
@@ -675,7 +203,7 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         fps = vcapture.get(cv2.CAP_PROP_FPS)
 
         # Define codec and create video writer
-        file_name = os.path.basename + "_splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
+        file_name = os.path.basename(video_path) + "_splash_{:%Y%m%dT%H%M%S}.avi".format(datetime.datetime.now())
         vwriter = cv2.VideoWriter(file_name,
                                   cv2.VideoWriter_fourcc(*'MJPG'),
                                   fps, (width, height))
@@ -709,11 +237,11 @@ def evaluate_model(model, config):
     """
 
     # Automatically discriminate the dataset according to the config file
-    if isinstance(config, TabletopConfigInference):
+    if isinstance(config, configurations.TabletopConfigInference):
         # Load the validation dataset
-        dataset_val = TabletopDataset()
-    elif isinstance(config, YCBVideoConfigInference):
-        dataset_val = YCBVideoDataset()
+        dataset_val = datasets.TabletopDataset()
+    elif isinstance(config, configurations.YCBVideoConfigInference):
+        dataset_val = datasets.YCBVideoDataset()
 
     dataset_val.load_dataset(args.dataset, "val")
     dataset_val.prepare()
@@ -869,11 +397,11 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        #config = TabletopConfigTraining()
-        config = YCBVideoConfigTraining()
+        config = configurations.TabletopConfigTraining()
+        #config = configurations.YCBVideoConfigTraining()
     else:
-        #config = TabletopConfigInference()
-        config = YCBVideoConfigInference()
+        config = TabletopConfigInference()
+        #config = configurations.YCBVideoConfigInference()
 
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -903,11 +431,14 @@ if __name__ == '__main__':
     else:
         weights_path = args.weights
 
+
+
     # Load weights
     print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
+    if args.command == "train":
         # Exclude the last layers because they require a matching
         # number of classes
+        #POSSIBLE BUG: WATCH OUT WHEN RESTARTING A TRAINING SESSION THAT WAS INTERRUPTED!!!!
         model.load_weights(weights_path, by_name=True, exclude=[
             "mrcnn_class_logits", "mrcnn_bbox_fc",
             "mrcnn_bbox", "mrcnn_mask"])
@@ -922,11 +453,11 @@ if __name__ == '__main__':
         #TODO: BRING DATASET INSTANTIATION OUT OF THIS IF STATEMENT
 
         # Automatically discriminate the dataset according to the config file
-        if isinstance(config, TabletopConfigInference):
+        if isinstance(config, configurations.TabletopConfigInference):
             # Load the validation dataset
-            dataset = TabletopDataset()
-        elif isinstance(config, YCBVideoConfigInference):
-            dataset = YCBVideoDataset()
+            dataset = datasets.TabletopDataset()
+        elif isinstance(config, configurations.YCBVideoConfigInference):
+            dataset = datasets.YCBVideoDataset()
 
         # No need to load the whole dataset, just the class names will be ok
         dataset.load_class_names(args.dataset)
