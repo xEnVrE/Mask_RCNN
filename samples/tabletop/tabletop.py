@@ -27,13 +27,18 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
 
     # Splash results to video using the last weights you trained
     python3 tabletop.py splash --weights=last --video=<URL or path to file>
+
+    # Save masks of all objects given a sequence of images
+    python3 tabletop.py masks --weights=/path/to/weights/file.h5 --dataset=/path/to/dataset --sequence=/path/to/sequence
 """
 
+import glob
 import os
 import sys
 import datetime
 import numpy as np
 import cv2
+import imageio
 from keras.utils.generic_utils import Progbar
 import imgaug
 
@@ -58,60 +63,6 @@ DEFAULT_LOGS_DIR = os.path.join(ROOT_DIR, "logs")
 ############################################################
 #  Utils
 ############################################################
-
-def train(model, config):
-    """Train the model."""
-
-    # Automatically discriminate the dataset according to the config file
-    if isinstance(config, configurations.TabletopConfigTraining):
-        # Load the training dataset
-        dataset_train = datasets.TabletopDataset()
-        # Load the validation dataset
-        dataset_val = datasets.TabletopDataset()
-    elif isinstance(config, configurations.YCBVideoConfigTraining):
-        dataset_train = datasets.YCBVideoDataset()
-        dataset_val = datasets.YCBVideoDataset()
-
-    dataset_train.load_dataset(args.dataset, "train")
-    dataset_train.prepare()
-
-    dataset_val.load_dataset(args.dataset, "val")
-    dataset_val.prepare()
-
-    # Experimental: train/validate on whole dataset.
-    # Number of steps must be equal to round_down(dataset_size/batch_size)
-    if config.STEPS_PER_EPOCH == None:
-        config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
-
-    augmentation = imgaug.augmenters.Sequential([
-        imgaug.augmenters.Fliplr(0.5),                          # Horizontal flips
-        imgaug.augmenters.Sometimes(0.5,
-            imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
-        ),
-        imgaug.augmenters.Affine(
-            rotate=(-150,150),                                    # Apply rotation
-            scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}            # Scale change
-        ),
-        imgaug.augmenters.ContrastNormalization((0.8, 1.2))    # Change image contrast
-    ])
-
-    # TRAINING SCHEDULE
-
-    stages_trained = '5+'
-    print("Training network stages" + stages_trained)
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE,
-                epochs=20,
-                layers=stages_trained,
-                augmentation=augmentation)
-
-    stages_trained = 'heads'
-    print("Training network stages" + stages_trained)
-    model.train(dataset_train, dataset_val,
-                learning_rate=config.LEARNING_RATE/5.0,
-                epochs=40,
-                layers=stages_trained,
-                augmentation=augmentation)
 
 def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors, scores=None):
     """
@@ -173,7 +124,57 @@ def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors
 
     return result
 
-def detect_and_splash_results(model, config, dataset, class_colors, image_path=None, video_path=None):
+
+def produce_masks(model, config, path, format = "jpg"):
+    # Fix path if require
+    if path[-1] != "/":
+        path = path + "/"
+
+    path_rgb = path + "rgb/"
+
+    # Take all the images paths
+    files = glob.glob(path_rgb + "*." + format)
+
+    # Process all the images
+    for file in files:
+        # Compose output name
+        file_name = file.split("/")[-1].split(".")[0]
+
+        # Process image
+        image = cv2.imread(file)
+
+        # OpenCV returns images as BGR, convert to RGB
+        image = image[..., ::-1]
+
+        # Detect objects
+        r = model.detect([image], verbose=1)[0]
+
+        # Get image size
+        height, width, channels = image.shape
+
+        for cl in dataset.class_info:
+            if (any(r['class_ids'] == cl['id'])):
+                print("Detected " + cl['name'])
+                mask = np.zeros((height, width), dtype = np.uint8)
+                masks_ids = np.where(r['class_ids'] == cl['id'])[0]
+                # Squash masks from same object
+                for id in masks_ids:
+                    mask_i = r['masks'][:, :, id]
+                    mask_i.astype(np.uint8)
+                    mask = np.logical_or(mask, mask_i)
+
+                mask = mask * 255
+                try:
+                    imageio.imwrite(path + "maskrender/" + cl['name'] + "_" + file_name + ".png", mask)
+                except:
+                    print("****************************************************************************")
+                    print("SKIPPING: " + cl['name'] + "in frame" + file_name)
+                    print("****************************************************************************")
+                    pass
+
+
+
+def detect_and_splash_results(model, config, dataset, class_colors, image_path=None, image_sequence_path=None, video_path=None):
 
     assert image_path or video_path
 
@@ -228,113 +229,6 @@ def detect_and_splash_results(model, config, dataset, class_colors, image_path=N
         vwriter.release()
     print("Saved to ", file_name)
 
-def evaluate_model(model, config):
-    """
-    Evaluate the loaded model on the target dataset
-    :param model: the architecture model, with loaded weights
-    :param config: the configuration class for this dataset
-    """
-
-    # Automatically discriminate the dataset according to the config file
-    if isinstance(config, configurations.TabletopConfigInference):
-        # Load the validation dataset
-        dataset_val = datasets.TabletopDataset()
-    elif isinstance(config, configurations.YCBVideoConfigInference):
-        dataset_val = datasets.YCBVideoDataset()
-
-    dataset_val.load_dataset(args.dataset, "val")
-    dataset_val.prepare()
-
-    # Compute COCO-Style mAP @ IoU=0.5-0.95 in 0.05 increments
-    # Running on all images
-    #image_ids = np.random.choice(dataset_val.image_ids, 200)
-    image_ids = dataset_val.image_ids
-    APs = []
-    AP50s = []
-    AP75s = []
-    image_batch_vector = []
-    image_batch_eval_data = []
-    img_batch_count = 0
-
-    import time
-    t_inference = 0
-
-    class image_eval_data:
-        def __init__(self, image_id, gt_class_id, gt_bbox, gt_mask):
-            self.IMAGE_ID = image_id
-            self.GT_CLASS_ID = gt_class_id
-            self.GT_BBOX = gt_bbox
-            self.GT_MASK = gt_mask
-            self.DETECTION_RESULTS = None
-
-    print("Evaluating model...")
-    progbar = Progbar(target = len(image_ids))
-
-
-    for idx, image_id in enumerate(image_ids):
-        # Load image and ground truth data
-        image, image_meta, gt_class_id, gt_bbox, gt_mask = \
-            modellib.load_image_gt(dataset_val, config,
-                                   image_id, use_mini_mask=False)
-
-        # Compose a vector of images and data
-        image_batch_vector.append(image)
-        image_batch_eval_data.append(image_eval_data(image_id, gt_class_id, gt_bbox, gt_mask))
-        img_batch_count += 1
-
-        # If a batch is ready, go on to detection
-        # The last few images in the dataset will not be used if batch size > 1
-        if img_batch_count < config.BATCH_SIZE:
-            continue
-
-        # Run object detection
-        t_start = time.time()
-        results = model.detect(image_batch_vector, verbose=0)
-        t_inference += (time.time() - t_start)
-
-        assert len(image_batch_eval_data) == len(results)
-
-        for eval_data, detection_results in zip(image_batch_eval_data, results):
-            eval_data.DETECTION_RESULTS = detection_results
-            # Compute mAP at different IoU (as msCOCO mAP is computed)
-            AP = utils.compute_ap_range(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
-                                        eval_data.DETECTION_RESULTS["rois"],
-                                        eval_data.DETECTION_RESULTS["class_ids"],
-                                        eval_data.DETECTION_RESULTS["scores"],
-                                        eval_data.DETECTION_RESULTS['masks'],
-                                        verbose=0)
-            AP50, _, _, _ = utils.compute_ap(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
-                                        eval_data.DETECTION_RESULTS["rois"],
-                                        eval_data.DETECTION_RESULTS["class_ids"],
-                                        eval_data.DETECTION_RESULTS["scores"],
-                                        eval_data.DETECTION_RESULTS['masks'],
-                                        iou_threshold=0.5)
-            AP75, _, _, _ = utils.compute_ap(eval_data.GT_BBOX, eval_data.GT_CLASS_ID, eval_data.GT_MASK,
-                                        eval_data.DETECTION_RESULTS["rois"],
-                                        eval_data.DETECTION_RESULTS["class_ids"],
-                                        eval_data.DETECTION_RESULTS["scores"],
-                                        eval_data.DETECTION_RESULTS['masks'],
-                                        iou_threshold=0.75)
-
-            APs.append(AP)
-            AP50s.append(AP50)
-            AP75s.append(AP75)
-
-        # Reset the batch info
-        image_batch_vector = []
-        image_batch_eval_data = []
-        img_batch_count = 0
-
-        progbar.update(idx+1)
-
-    print("\nmAP[0.5::0.05::0.95]: ", np.mean(APs))
-    print("mAP[0.5]: ", np.mean(AP50s))
-    print("mAP[0.75]: ", np.mean(AP75s))
-
-    print("Inference time for", len(image_ids), "images: ", t_inference, "s \tAverage FPS: ", len(image_ids)/t_inference)
-
-    return APs
-
 # TODO: REMOVE THIS IF PYTHON-TKINTER IS INSTALLED ON SERVER
 def random_colors(N, bright=True):
     """
@@ -380,6 +274,9 @@ if __name__ == '__main__':
     parser.add_argument('--video', required=False,
                         metavar="path or URL to video",
                         help='Video to detect objects on')
+    parser.add_argument('--sequence', required=False,
+                        metavar="path to image sequence",
+                        help='Sequence of images')
     args = parser.parse_args()
 
     # Validate arguments
@@ -396,11 +293,11 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        config = configurations.TabletopConfigTraining()
-        #config = configurations.YCBVideoConfigTraining()
+        #config = configurations.TabletopConfigTraining()
+        config = configurations.YCBVideoConfigTraining()
     else:
-        config = TabletopConfigInference()
-        #config = configurations.YCBVideoConfigInference()
+        #config = TabletopConfigInference()
+        config = configurations.YCBVideoConfigInference()
 
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
@@ -466,11 +363,15 @@ if __name__ == '__main__':
         random_class_colors = random_colors(len(dataset.class_names))
         class_colors = {class_id: color for (color, class_id) in zip(random_class_colors, dataset.class_names)}
 
-        detect_and_splash_results(model, image_path=args.image,
-                                video_path=args.video, config=config, dataset=dataset, class_colors=class_colors)
+        detect_and_splash_results(model, image_path=args.image, image_sequence_path=args.image_sequence, video_path=args.video, config=config, dataset=dataset, class_colors=class_colors)
 
     elif args.command == 'evaluate':
         evaluate_model(model, config)
+    elif args.command == 'masks':
+        print("Selected command 'masks'")
+        dataset = datasets.YCBVideoDataset()
+        dataset.load_class_names(args.dataset)
+        produce_masks(model, dataset, args.sequence)
     else:
         print("'{}' is not recognized. "
               "Use 'train', 'splash' or 'evaluate'".format(args.command))
