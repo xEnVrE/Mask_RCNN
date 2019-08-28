@@ -84,13 +84,13 @@ def train(model, config):
         config.STEPS_PER_EPOCH = int(dataset_train.num_images/config.BATCH_SIZE)
 
     augmentation = imgaug.augmenters.Sequential([
-        imgaug.augmenters.Fliplr(0.5),                          # Horizontal flips
-        imgaug.augmenters.Sometimes(0.5,
-            imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
-        ),
+        imgaug.augmenters.Fliplr(0.2),                          # Horizontal flips
+        #imgaug.augmenters.Sometimes(0.5,
+        #    imgaug.augmenters.GaussianBlur(sigma=(0, 0.5))      # Gaussian blur
+        #),
         imgaug.augmenters.Affine(
-            rotate=(-150,150),                                    # Apply rotation
-            scale={"x": (0.8, 1.2), "y": (0.8, 1.2)}            # Scale change
+            rotate=(-10,10),                                    # Apply rotation
+            scale={"x": (0.9, 1.1), "y": (0.9, 1.1)}            # Scale change
         ),
         imgaug.augmenters.ContrastNormalization((0.8, 1.2))    # Change image contrast
     ])
@@ -396,11 +396,11 @@ if __name__ == '__main__':
     # Configurations
     # Instance the proper config file, depending on the dataset to use
     if args.command == "train":
-        config = configurations.TabletopConfigTraining()
-        #config = configurations.YCBVideoConfigTraining()
+        #config = configurations.TabletopConfigTraining()
+        config = configurations.YCBVideoConfigTraining()
     else:
-        config = TabletopConfigInference()
-        #config = configurations.YCBVideoConfigInference()
+        #config = TabletopConfigInference()
+        config = configurations.YCBVideoConfigInference()
 
     # Add some env variables to set GPU usage
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'

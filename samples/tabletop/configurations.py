@@ -76,11 +76,11 @@ class YCBVideoConfigTraining(Config):
     IMAGES_PER_GPU = 4
 
     # Define number of GPUs to use
-    GPU_COUNT = 1
-    GPU_ID = "0"
+    GPU_COUNT = 4
+    GPU_ID = "0,1,2,3"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
+    NUM_CLASSES = 1 + 21  # Background + 21 YCB_video objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
@@ -114,7 +114,7 @@ class YCBVideoConfigInference(Config):
     GPU_ID = "0"
 
     # Number of classes (including background)
-    NUM_CLASSES = 1 + 20  # Background + 20 YCB objects (no wood block!)
+    NUM_CLASSES = 1 + 21  # Background + 21 YCB_video objects
 
     # Specify the backbone network
     BACKBONE = "resnet50"
