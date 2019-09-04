@@ -46,6 +46,11 @@ class YCBVideoDataset(utils.Dataset):
                     "class_info" : self.class_info,
                     "source_class_ids" : self.source_class_ids}
 
+        logfile_dirname = os.path.dirname(logfile_name)        
+
+        if not os.path.exists(logfile_dirname):
+            os.makedirs(logfile_dirname)
+
         with open(logfile_name, 'wb') as handle:
             pickle.dump(log_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
@@ -65,8 +70,6 @@ class YCBVideoDataset(utils.Dataset):
         self.image_info = log_dict["image_info"]
         self.class_info = log_dict["class_info"]
         self.source_class_ids = log_dict["source_class_ids"]
-
-        import ipdb; ipdb.set_trace()
 
         return
 
