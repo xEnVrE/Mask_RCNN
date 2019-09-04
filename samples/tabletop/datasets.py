@@ -3,7 +3,7 @@
 ############################################################
 import os
 import sys
-import json
+import json, pickle
 import numpy as np
 import skimage.draw
 import scipy.io
@@ -16,6 +16,59 @@ class YCBVideoDataset(utils.Dataset):
 
     # List of classes to remove
     UNWANTED_CLASS_LIST = {}
+
+    def get_dataset_logfile(self, dataset_root, class_number, num_images, subset):
+        """
+        Returns the path of the logfile that should be created for this dataset.
+        :param dataset_root (string): root directory of the dataset
+        :param class_number (int): number of classes in the dataset, including bg
+        :param num_images (int): number of images in the dataset
+        :param subset (string): typically train or val
+        :return dataset_logfile (string): path of the logfile
+        """
+
+        # Compose the name of the logfile
+        logfile_name = os.path.join(dataset_root,
+                                    "image_sets",
+                                    "dataset_logfiles",
+                                    "YCBVideo_"+subset+"_"+str(class_number)+"_"+str(num_images)+"_log")
+
+        return logfile_name
+
+    def dump_to_log(self, logfile_name):
+        """
+        Dumps the dataset class.
+        :param logfile_name (string): path of the logfile
+        """
+
+        log_dict = {"_image_ids" : self.image_ids,
+                    "image_info" : self.image_info,
+                    "class_info" : self.class_info,
+                    "source_class_ids" : self.source_class_ids}
+
+        with open(logfile_name, 'wb') as handle:
+            pickle.dump(log_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+        return
+
+
+    def load_from_log(self, logfile_name):
+        """
+        Loads the dataset class.
+        :param logfile_name (string): path of the logfile
+        """
+
+        with open(logfile_name, 'rb') as handle:
+            log_dict = pickle.load(handle)
+
+        self._image_ids = log_dict["_image_ids"]
+        self.image_info = log_dict["image_info"]
+        self.class_info = log_dict["class_info"]
+        self.source_class_ids = log_dict["source_class_ids"]
+
+        import ipdb; ipdb.set_trace()
+
+        return
 
     def parse_class_list(self, dataset_root):
         """
@@ -80,40 +133,56 @@ class YCBVideoDataset(utils.Dataset):
 
         data_dir = os.path.join(dataset_root, 'data/')
 
-        progress_step = max(round(len(frame_file_list)/1000), 1)
-        progbar = Progbar(target = len(frame_file_list))
-        print("Loading ", subset, "dataset...")
+        # Check if a logfile exists for the dataset
+        dataset_logfile = self.get_dataset_logfile(dataset_root, len(self.class_names), len(frame_file_list), subset)
+        print("Looking for logfile: ", dataset_logfile)
+        dataset_logfile_found = os.path.isfile(dataset_logfile)
 
-        for progress_idx, frame in enumerate(frame_file_list):
-            rgb_image_path = data_dir + frame + '-color.png'
-            mask_path = data_dir + frame + '-label.png'
-            metadata_path = data_dir + frame + '-meta.mat'
+        if not dataset_logfile_found:
 
-            # Load the metadata file for each sample to get the instance IDs for the masks
-            metadata = scipy.io.loadmat(metadata_path)
-            instance_ids = metadata['cls_indexes']
-            instance_ids = instance_ids.reshape(instance_ids.size)
+            # Load all image data
+            progress_step = max(round(len(frame_file_list)/1000), 1)
+            progbar = Progbar(target = len(frame_file_list))
+            print("Loading ", subset, "dataset...")
 
-            # Remove detection ids related to unwanted classes from detection list
-            if self.UNWANTED_CLASS_LIST:
-                for unwanted_class_name, unwanted_class_id in self.UNWANTED_CLASS_LIST.items():
-                    instance_ids = instance_ids[instance_ids != unwanted_class_id]
-                    instance_ids = instance_ids - 1 * (instance_ids > unwanted_class_id)
+            for progress_idx, frame in enumerate(frame_file_list):
+                rgb_image_path = data_dir + frame + '-color.png'
+                mask_path = data_dir + frame + '-label.png'
+                metadata_path = data_dir + frame + '-meta.mat'
 
-            # Add an image to the dataset
-            if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
-                self.add_image(
-                    "ycb_video",
-                    image_id = frame,
-                    path = rgb_image_path,
-                    width = 640, height = 480,
-                    mask_path = mask_path,
-                    mask_ids = instance_ids
-                )
+                # Load the metadata file for each sample to get the instance IDs for the masks
+                metadata = scipy.io.loadmat(metadata_path)
+                instance_ids = metadata['cls_indexes']
+                instance_ids = instance_ids.reshape(instance_ids.size)
 
-            # Keep track of progress
-            if progress_idx%progress_step == 0 or progress_idx == len(frame_file_list):
-                progbar.update(progress_idx+1)
+                # Remove detection ids related to unwanted classes from detection list
+                if self.UNWANTED_CLASS_LIST:
+                    for unwanted_class_name, unwanted_class_id in self.UNWANTED_CLASS_LIST.items():
+                        instance_ids = instance_ids[instance_ids != unwanted_class_id]
+                        instance_ids = instance_ids - 1 * (instance_ids > unwanted_class_id)
+
+                # Add an image to the dataset
+                if os.path.isfile(rgb_image_path) and os.path.isfile(mask_path):
+                    self.add_image(
+                        "ycb_video",
+                        image_id = frame,
+                        path = rgb_image_path,
+                        width = 640, height = 480,
+                        mask_path = mask_path,
+                        mask_ids = instance_ids
+                    )
+
+                # Keep track of progress
+                if progress_idx%progress_step == 0 or progress_idx == len(frame_file_list):
+                    progbar.update(progress_idx+1)
+
+            self.dump_to_log(dataset_logfile)
+
+        else:
+            print("Pickled dataset found!")
+
+            # THIS WILL PROBABLY NOT WORK!
+            self.load_from_log(dataset_logfile)
 
         print("\nDataset loaded: ", len(self.image_info), "images found.")
 
