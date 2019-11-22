@@ -21,13 +21,14 @@ sys.path.append(ROOT_DIR)
 import mrcnn.model as modellib
 
 #   Import the tabletop dataset custom configuration
-import tabletop
+from samples.tabletop import tabletop
+from samples.tabletop import configurations
+from samples.tabletop import datasets
 
-#   Import YARP bindings
 if 'yarp' not in sys.modules:
-    
-    YARP_BINDINGS_DIR = "/home/icub/tmp_fbottarel/yarp_bindings_python3/lib/python"
+    YARP_BINDINGS_DIR = "" 
     sys.path.insert(0, YARP_BINDINGS_DIR)
+
     print("Path to YARP bindings not in PYTHONPATH env variable. Using script path settings: \n", YARP_BINDINGS_DIR)
 
 import yarp
@@ -40,7 +41,7 @@ yarp.Network.init()
 
 #   Add environment variables depending on the system
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 #   Declare directories for weights and logs
 MODEL_DIR = os.path.join(ROOT_DIR, "logs")
@@ -110,12 +111,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_in.open('/' +  self._module_name + '/RGBimage:i')
 
         #   Input buffer initialization
+        self._input_buf_array = bytearray(np.zeros((self._input_img_height, self._input_img_width, 3), dtype = np.uint8))
         self._input_buf_image = yarp.ImageRgb()
         self._input_buf_image.resize(self._input_img_width, self._input_img_height)
-        self._input_buf_array = np.ones((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
-        self._input_buf_image.setExternal(self._input_buf_array,
-                                          self._input_buf_array.shape[1],
-                                          self._input_buf_array.shape[0])
+        self._input_buf_image.setExternal(self._input_buf_array, self._input_img_width, self._input_img_height)
 
         print('Input image buffer configured')
 
@@ -133,12 +132,10 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         self._port_out_info.open('/' + self._module_name + '/detectionInfo:o')
 
         #   Output buffer initialization
+        self._output_buf_array = bytearray(np.zeros((self._input_img_height, self._input_img_width, 3), dtype = np.uint8))
         self._output_buf_image = yarp.ImageRgb()
-        self._output_buf_image.resize(self._input_img_width, self._input_img_height)
-        self._output_buf_array = np.zeros((self._input_img_height, self._input_img_width, 3), dtype = np.uint8)
-        self._output_buf_image.setExternal(self._output_buf_array,
-                                           self._output_buf_array.shape[1],
-                                           self._output_buf_array.shape[0])
+        # self._output_buf_image.resize(self._input_img_width, self._input_img_height)
+        # self._output_buf_image.setExternal(self._output_buf_array, self._input_img_width, self._input_img_height)
 
         print('Output image buffer configured')
 
@@ -149,6 +146,7 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         #   Output mask buffer initialization
         self._output_mask_buf_image = yarp.ImageMono()
         self._output_mask_buf_image.resize(self._input_img_width, self._input_img_height)
+
         print('Output mask buffer configured')
 
 
@@ -159,12 +157,12 @@ class MaskRCNNWrapperModule (yarp.RFModule):
 
         #   Inference model setup
         #   Configure some parameters for inference
-        config = tabletop.YCBVideoConfigInference()
-        config.POST_NMS_ROIS_INFERENCE        =300
+        config = configurations.YCBVideoConfigInference()
+        #config = configurations.TabletopConfigInference()
+        config.POST_NMS_ROIS_INFERENCE        =100
         config.PRE_NMS_LIMIT                  =1000
         config.DETECTION_MAX_INSTANCES        =10
-        config.DETECTION_MIN_CONFIDENCE       =0.75
-        
+ 
         config.display()
 
         self._model = modellib.MaskRCNN(mode='inference',
@@ -179,11 +177,11 @@ class MaskRCNNWrapperModule (yarp.RFModule):
         dataset_root = os.path.join(ROOT_DIR, "datasets", "YCB_Video_Dataset")
 
         # Automatically discriminate the dataset according to the config file
-        if isinstance(config, tabletop.TabletopConfigInference):
+        if isinstance(config, configurations.TabletopConfigInference):
             # Load the validation dataset
-            self._dataset = tabletop.TabletopDataset()
-        elif isinstance(config, tabletop.YCBVideoConfigInference):
-            self._dataset = tabletop.YCBVideoDataset()
+            self._dataset = datasets.TabletopDataset()
+        elif isinstance(config, configurations.YCBVideoConfigInference):
+            self._dataset = datasets.YCBVideoDataset()
 
         # No need to load the whole dataset, just the class names will be ok
         self._dataset.load_class_names(dataset_root)
@@ -241,10 +239,8 @@ class MaskRCNNWrapperModule (yarp.RFModule):
             print('Invalid input image (image is None)')
         else:
             self._input_buf_image.copy(input_img)
-            assert self._input_buf_array.__array_interface__['data'][0] == self._input_buf_image.getRawImage().__int__()
-
             #   run detection/segmentation on frame
-            frame = self._input_buf_array
+            frame = np.ascontiguousarray(self._input_buf_array).reshape(self._input_img_height, self._input_img_width, -1)
             results = self._model.detect([frame], verbose=0)
 
             # Visualize and stream results
@@ -265,13 +261,13 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     bb.addDouble(float(x2))
                     bb.addDouble(float(y2))
 
-
                 #   Send out the processed image
-                self._output_buf_array[:,:] = frame_with_detections.astype(np.uint8)
+                self._output_buf_array = bytearray(frame_with_detections.astype(np.uint8))
+                self._output_buf_image.setExternal(self._output_buf_array, self._input_img_width, self._input_img_height)
                 self._port_out.write(self._output_buf_image)
-
+                
                 # Default behavior is a blank image
-                output_mask_buf_array = np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8)
+                output_mask_buf_array = bytearray(np.zeros((self._input_img_height, self._input_img_width), dtype = np.uint8))
 
                 #   Send the mask related to the asked object
                 if self._obj_stream:
@@ -279,12 +275,9 @@ class MaskRCNNWrapperModule (yarp.RFModule):
                     if any(r['class_ids'] == obj_stream_idx):
                         #   If desired object was detected
                         obj_stream_mask_id = np.where(r['class_ids'] == obj_stream_idx)[0][0]
-                        output_mask_buf_array[:,:] = r['masks'][:,:,obj_stream_mask_id].astype(np.uint8) * 255
+                        output_mask_buf_array = bytearray(r['masks'][:,:,obj_stream_mask_id].astype(np.uint8) * 255)
 
-                    self._output_mask_buf_image.setExternal(output_mask_buf_array,
-                                                            output_mask_buf_array.shape[1],
-                                                            output_mask_buf_array.shape[0])
-
+                    self._output_mask_buf_image.setExternal(output_mask_buf_array, self._input_img_width, self._input_img_height)
                     self._port_out_mask.write(self._output_mask_buf_image)
 
                 #   Send out the bounding boxes data
