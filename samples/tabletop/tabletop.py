@@ -125,7 +125,7 @@ def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors
     return result
 
 
-def produce_masks(model, config, path, format = "jpg"):
+def produce_masks(model, config, path, format = "png"):
     # Fix path if require
     if path[-1] != "/":
         path = path + "/"
@@ -165,7 +165,7 @@ def produce_masks(model, config, path, format = "jpg"):
 
                 mask = mask * 255
                 try:
-                    imageio.imwrite(path + "maskrender/" + cl['name'] + "_" + file_name + ".png", mask)
+                    imageio.imwrite(path + "masks/" + cl['name'] + "_" + file_name + ".png", mask)
                 except:
                     print("****************************************************************************")
                     print("SKIPPING: " + cl['name'] + "in frame" + file_name)
