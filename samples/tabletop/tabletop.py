@@ -317,6 +317,7 @@ if __name__ == '__main__':
     # Override configuration according to parsed arguments
     if args.number_classes is not None:
         config.NUM_CLASSES = int(args.number_classes)
+        config.update_image_meta_size()
 
     # Add some env variables to set GPU usage
     if args.gpu_id is not None:
