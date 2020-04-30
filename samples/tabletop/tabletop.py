@@ -29,7 +29,7 @@ Usage: import the module (see Jupyter notebooks for examples), or run from
     python3 tabletop.py splash --weights=last --video=<URL or path to file>
 
     # Save masks of all objects given a sequence of images
-    python3 tabletop.py masks --weights=/path/to/weights/file.h5 --dataset=/path/to/dataset --sequence=/path/to/sequence
+    python3 tabletop.py masks --weights=/path/to/weights/file.h5 --dataset=/path/to/dataset --sequence=/path/to/sequence --output=/path/to/output --number_classes=<number of classes>
 """
 
 import glob
@@ -125,15 +125,20 @@ def apply_detection_results(image, masks, bboxes, class_ids, class_names, colors
     return result
 
 
-def produce_masks(model, config, path, format = "png"):
+def produce_masks(model, config, path, output_path, format = "png"):
+    # Check if output path already exists
+    try:
+        os.makedirs(output_path)
+    except OSError:
+        print("MaskRCNN: Dir " + output_path + " already exists. Please remove it to repeat the inference process.")
+        exit(1)
+
     # Fix path if require
     if path[-1] != "/":
         path = path + "/"
 
-    path_rgb = path + "rgb/"
-
     # Take all the images paths
-    files = glob.glob(path_rgb + "*." + format)
+    files = glob.glob(path + "*." + format)
 
     # Process all the images
     for file in files:
@@ -165,7 +170,7 @@ def produce_masks(model, config, path, format = "png"):
 
                 mask = mask * 255
                 try:
-                    imageio.imwrite(path + "masks/" + cl['name'] + "_" + file_name + ".png", mask)
+                    imageio.imwrite(output_path + "/" + cl['name'] + "_" + file_name + ".png", mask)
                 except:
                     print("****************************************************************************")
                     print("SKIPPING: " + cl['name'] + "in frame" + file_name)
@@ -277,6 +282,16 @@ if __name__ == '__main__':
     parser.add_argument('--sequence', required=False,
                         metavar="path to image sequence",
                         help='Sequence of images')
+    parser.add_argument('--gpu_id', required=False,
+                        metavar="GPU ID",
+                        help='Sequence of images')
+    parser.add_argument('--number_classes', required=False,
+                        metavar="number of classes",
+                        help='Sequence of images')
+    parser.add_argument('--output', required=False,
+                        metavar="",
+                        help='Output path')
+
     args = parser.parse_args()
 
     # Validate arguments
@@ -299,7 +314,13 @@ if __name__ == '__main__':
         #config = TabletopConfigInference()
         config = configurations.YCBVideoConfigInference()
 
+    # Override configuration according to parsed arguments
+    if args.number_classes is not None:
+        config.NUM_CLASSES = int(args.number_classes)
+
     # Add some env variables to set GPU usage
+    if args.gpu_id is not None:
+        config.GPU_ID = args.gpu_id
     os.environ['CUDA_DEVICE_ORDER'] = 'PCI_BUS_ID'
     os.environ['CUDA_VISIBLE_DEVICES'] = config.GPU_ID
     config.display()
@@ -371,7 +392,10 @@ if __name__ == '__main__':
         print("Selected command 'masks'")
         dataset = datasets.YCBVideoDataset()
         dataset.load_class_names(args.dataset)
-        produce_masks(model, dataset, args.sequence)
+        if args.output is None:
+            print('Missing argument output required for command masks.')
+            exit (0)
+        produce_masks(model, dataset, args.sequence, args.output)
     else:
         print("'{}' is not recognized. "
               "Use 'train', 'splash' or 'evaluate'".format(args.command))
